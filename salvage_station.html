@@ -1388,43 +1388,53 @@ function leaveRoom(){
 const urlParams = new URLSearchParams(location.search);
 if(urlParams.get('room')){
   setTimeout(()=>{
+    // Ensure logged in (auto-guest) so lobby is accessible
+    if(!currentUser){ try { doGuest(); } catch(e){} }
     document.getElementById('joinCode').value = urlParams.get('room').toUpperCase();
     showJoin();
     joinRoom();
-  }, 300);
+  }, 400);
 }
 
 // ============ LAUNCH ============
-function launchMission(){
-  if(NET.isOnline && !NET.isHost) return;
+function showGameView(){
+  // Hide all overlays that could block the game view, show all game UI
+  document.getElementById('authView').style.display='none';
   document.getElementById('lobby').style.display='none';
+  document.getElementById('userBadge').style.display='none';
   document.getElementById('wrap').classList.add('show');
   document.getElementById('shop').style.display='block';
   document.getElementById('help').style.display='block';
   document.getElementById('achBtn').style.display='block';
-  document.getElementById('hudRoom').textContent = NET.code || 'SOLO';
   document.getElementById('netStat').style.display = NET.isOnline?'block':'none';
+}
+
+function launchMission(){
+  if(NET.isOnline && !NET.isHost) return;
+  showGameView();
+  document.getElementById('hudRoom').textContent = NET.code || 'SOLO';
   requestAnimationFrame(()=>{
     resize();
     initGameHost();
     if(NET.isHost){
+      // Broadcast start to all connected peers
+      const snap = makeSnapshot();
       for(const peerId in NET.peers){
         const p = NET.peers[peerId];
-        p.conn.send({t:'start', yourIdx: p.playerIdx, snapshot: makeSnapshot()});
+        try {
+          p.conn.send({t:'start', yourIdx: p.playerIdx, snapshot: snap});
+          console.log('[HOST] sent start to', peerId, 'as slot', p.playerIdx);
+        } catch(e){ console.warn('[HOST] failed to send start to', peerId, e); }
       }
     }
-    // Track co-op
     if(LOBBY.players.length>1) trackStat('coopSessions', 1);
   });
 }
 
 function startGameClient(snapshot){
-  document.getElementById('lobby').style.display='none';
-  document.getElementById('wrap').classList.add('show');
-  document.getElementById('shop').style.display='block';
-  document.getElementById('help').style.display='block';
+  showGameView();
   document.getElementById('hudRoom').textContent = NET.code;
-  document.getElementById('netStat').style.display = 'block';
+  console.log('[CLIENT] received start, myIdx=', NET.myIdx);
   requestAnimationFrame(()=>{ resize(); initGameClient(snapshot); });
 }
 
@@ -1436,12 +1446,18 @@ addEventListener('keydown', e=>{
 
 function leaveToLobby(){
   document.getElementById('wrap').classList.remove('show');
-  document.getElementById('lobby').style.display='flex';
   document.getElementById('shop').style.display='none';
   document.getElementById('help').style.display='none';
   document.getElementById('netStat').style.display='none';
+  document.getElementById('achBtn').style.display='none';
   document.getElementById('teamHud').innerHTML='';
   running = false;
+  if(currentUser){
+    document.getElementById('lobby').style.display='flex';
+    document.getElementById('userBadge').style.display='flex';
+  } else {
+    document.getElementById('authView').style.display='flex';
+  }
 }
 
 // ================================================================
