@@ -679,6 +679,20 @@
 <button id="expBtn" onclick="openExpeditions()">🚀 탐사 파견</button>
 <div id="expActiveHud"></div>
 
+<div id="tradePanel" style="position:fixed;inset:0;background:rgba(3,6,14,.9);z-index:290;display:none;
+  align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);">
+  <div style="max-width:500px;width:100%;background:linear-gradient(180deg,#0a1224,#050818);
+    border:1px solid rgba(196,143,255,.4);border-radius:14px;padding:24px;position:relative;
+    box-shadow:0 20px 80px rgba(120,80,220,.4);">
+    <button onclick="closeTradePanel()" style="position:absolute;top:16px;right:16px;background:none;
+      border:1px solid #234;color:#8ff;padding:6px 14px;border-radius:6px;cursor:pointer;font-family:inherit;
+      font-size:12px;letter-spacing:2px;">✕ 닫기</button>
+    <h2 style="margin:0;font-size:22px;letter-spacing:6px;color:#c48fff;">🛸 외계 상인</h2>
+    <div style="color:#7fa8d8;font-size:12px;letter-spacing:2px;margin:6px 0 16px;">3가지 자원 교환 제안</div>
+    <div id="tradeOptions"></div>
+  </div>
+</div>
+
 <div id="expPanel">
   <div class="inner">
     <button class="close" onclick="closeExpeditions()">✕ 닫기</button>
@@ -2002,6 +2016,8 @@ function initGameHost(){
   S.mines=[]; S.turrets=[]; S.torches=[]; S.walls=[]; S.modules=[];
   S.deckCount = 0;
   S.expeditions = [];
+  S.whales=[]; S.traders=[]; S.derelicts=[];
+  S.spawnT = 0;
   STATION.r = STATION.baseR; // reset expansion
   // Grinder (제련기) — at bottom of station
   S.grinder = { ang: Math.PI/2, queue: [], processing: null, processT: 0, grindTime: 1.5, chuteR: 46 };
@@ -2311,11 +2327,80 @@ function spawnEnemy(kind){
   if(kind==='drone') S.enemies.push({...base, kind, hp:18, r:11, sp:1.3, dmg:6, fire:55, color:'#ff6a8a'});
   else if(kind==='fighter') S.enemies.push({...base, kind, hp:40, r:15, sp:1.0, dmg:12, fire:45, color:'#ff9a3a'});
   else if(kind==='hauler') S.enemies.push({...base, kind, hp:120, r:24, sp:0.55, dmg:22, fire:70, color:'#c04ac0'});
+  else if(kind==='elite') S.enemies.push({...base, kind, hp:100, r:17, sp:1.2, dmg:16, fire:35, color:'#ffd76a', shield:60});
+  else if(kind==='kamikaze') S.enemies.push({...base, kind, hp:12, r:12, sp:2.0, dmg:40, color:'#ff2040'});
   else if(kind==='meteor'){
     const tx=(Math.random()-0.5)*300, ty=(Math.random()-0.5)*300;
     const dx=tx-x,dy=ty-y; const L=Math.hypot(dx,dy);
     S.enemies.push({x,y,kind:'meteor',hp:30,r:20,vx:dx/L*1.8,vy:dy/L*1.8,dmg:25,color:'#a86040'});
   }
+}
+
+// === STALKER: chases specific player when they're far from station ===
+function spawnStalker(){
+  const candidates = S.team.filter(t=>Math.hypot(t.x,t.y) > 400);
+  if(!candidates.length) return;
+  const tgt = candidates[Math.floor(Math.random()*candidates.length)];
+  const ang = Math.random()*Math.PI*2;
+  const dist = 350 + Math.random()*200;
+  S.enemies.push({
+    x: tgt.x + Math.cos(ang)*dist, y: tgt.y + Math.sin(ang)*dist,
+    kind:'stalker', hp:40, r:14, sp:1.7, dmg:14, cool:40, ang:0,
+    color:'#8f4fa0', targetIdx: S.team.indexOf(tgt),
+  });
+  flash('🕷 스토커 접근!');
+}
+
+// === SPACE WHALE ===
+function spawnWhale(){
+  const ang = Math.random()*Math.PI*2;
+  const dist = WORLD_R - 200;
+  S.whales.push({
+    x: Math.cos(ang)*dist, y: Math.sin(ang)*dist,
+    vx:0, vy:0, tx:0, ty:0, wanderT:0,
+    hp:300, hpMax:300, r:55, hostile:false, dropT:0, ang:0,
+  });
+  flash('🐋 우주 고래 감지');
+}
+
+// === ALIEN TRADER ===
+function spawnTrader(){
+  const ang = Math.random()*Math.PI*2;
+  const dist = WORLD_R - 300;
+  const stock = [];
+  const kinds = [
+    {give:'core', giveAmt:2,  take:'scrap', takeAmt:40, icon:'⚡→⚙'},
+    {give:'plasma', giveAmt:3, take:'core',  takeAmt:8, icon:'🧪→⚡'},
+    {give:'ore', giveAmt:3,   take:'bio',   takeAmt:15, icon:'💎→🧬'},
+    {give:'cable', giveAmt:5, take:'scrap', takeAmt:25, icon:'⛓→⚙'},
+    {give:'bio', giveAmt:5,   take:'plasma', takeAmt:2, icon:'🧬→🧪'},
+  ];
+  // pick 3 random offers
+  const shuffled = kinds.slice().sort(()=>Math.random()-0.5);
+  for(let i=0;i<3;i++) stock.push(shuffled[i]);
+  S.traders.push({
+    x: Math.cos(ang)*dist, y: Math.sin(ang)*dist,
+    ang: Math.atan2(-Math.sin(ang), -Math.cos(ang)),
+    r: 26, dwellT: 75, stock, playerNear:false,
+    orbitAng: ang,
+  });
+  banner('🛸 외계 상인 도착 — 접근해서 거래', 3, '#c48fff');
+}
+
+// === DERELICT SHIP ===
+function spawnDerelict(){
+  const ang = Math.random()*Math.PI*2;
+  const dist = 800 + Math.random()*900;
+  const roll = Math.random();
+  let loot;
+  if(roll < 0.5) loot = {scrap:30, core:2, cable:2};
+  else if(roll < 0.85) loot = {scrap:40, core:4, plasma:2, ore:2};
+  else loot = {scrap:60, core:6, ore:4, plasma:3, cred:100};
+  S.derelicts.push({
+    x: Math.cos(ang)*dist, y: Math.sin(ang)*dist,
+    r: 28, ang: Math.random()*Math.PI*2, spinRate:(Math.random()-0.5)*0.005,
+    looted:false, loot,
+  });
 }
 
 // ============ MAIN LOOPS ============
@@ -2483,10 +2568,45 @@ function updateHost(dt){
     for(let j=S.enemies.length-1;j>=0;j--){
       const e = S.enemies[j];
       if(Math.hypot(b.x-e.x,b.y-e.y) < e.r+3){
-        e.hp -= b.dmg;
-        for(let k=0;k<5;k++) S.particles.push({x:b.x,y:b.y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:.3,c:'#ff8'});
+        if(e.kind==='elite' && e.shield>0){
+          e.shield -= b.dmg;
+          for(let k=0;k<3;k++) S.particles.push({x:b.x,y:b.y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:.3,c:'#8fc8ff'});
+        } else {
+          e.hp -= b.dmg;
+          for(let k=0;k<5;k++) S.particles.push({x:b.x,y:b.y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:.3,c:'#ff8'});
+        }
         S.bullets.splice(i,1); hit=true;
         if(e.hp<=0) killEnemy(j);
+        break;
+      }
+    }
+    // Whales get hit too — makes them hostile
+    if(!hit) for(let j=S.whales.length-1;j>=0;j--){
+      const w = S.whales[j];
+      if(Math.hypot(b.x-w.x,b.y-w.y) < w.r){
+        w.hp -= b.dmg;
+        w.hostile = true;
+        for(let k=0;k<6;k++) S.particles.push({x:b.x,y:b.y,vx:(Math.random()-.5)*3,vy:(Math.random()-.5)*3,life:.3,c:'#8fdf8f'});
+        S.bullets.splice(i,1); hit=true;
+        if(w.hp<=0){
+          S.bio += 25; S.plasma += 5; S.ore += 3;
+          banner('🐋 우주 고래 처치! 대량 자원', 3, '#8fdf8f');
+          explode(w.x, w.y, '#8fdf8f', 120);
+          S.whales.splice(j,1);
+          trackStat('whaleKills', 1);
+        }
+        break;
+      }
+    }
+    // Traders can be shot too (bad idea — they leave immediately)
+    if(!hit) for(let j=S.traders.length-1;j>=0;j--){
+      const tr = S.traders[j];
+      if(Math.hypot(b.x-tr.x,b.y-tr.y) < tr.r){
+        // Trader flees on attack
+        flash('🛸 외계 상인 도주');
+        explode(tr.x, tr.y, '#c48fff', 20);
+        S.traders.splice(j,1); hit=true;
+        S.bullets.splice(i,1);
         break;
       }
     }
@@ -2542,9 +2662,69 @@ function updateHost(dt){
     }
   }
 
+  // === Spawn triggers for new events ===
+  S.spawnT += dt;
+  if(S.phase==='day'){
+    // Stalker: if player is > 500 from station, 0.3% chance per frame
+    for(const t of S.team){
+      if(Math.hypot(t.x,t.y) > 500 && Math.random() < 0.001 * (1 + S.day*0.1)){
+        spawnStalker(); break;
+      }
+    }
+    // Whale: rare, 0.02% per frame, max 1
+    if(!S.whales.length && Math.random() < 0.00015) spawnWhale();
+    // Trader: every ~90s during day, max 1
+    if(!S.traders.length && S.day>=2 && Math.random() < 0.0004) spawnTrader();
+    // Derelict: max 3
+    if(S.derelicts.length < 3 && Math.random() < 0.0015) spawnDerelict();
+    // Elite fighter: rare day encounter
+    if(S.day>=3 && Math.random() < 0.0003) spawnEnemy('elite');
+  }
+
   // Enemies
   for(let i=S.enemies.length-1;i>=0;i--){
     const e = S.enemies[i];
+    if(e.kind==='stalker'){
+      const tgt = S.team[e.targetIdx] || S.team[0];
+      if(!tgt){ S.enemies.splice(i,1); continue; }
+      const dx = tgt.x-e.x, dy = tgt.y-e.y;
+      const L = Math.hypot(dx,dy);
+      e.ang = Math.atan2(dy,dx);
+      if(L > 30){ e.x += dx/L*e.sp; e.y += dy/L*e.sp; }
+      else {
+        e.cool--;
+        if(e.cool<=0){
+          e.cool = 40;
+          tgt.hp -= e.dmg;
+          if(tgt.hp<0) tgt.hp=0;
+          for(let k=0;k<8;k++) S.particles.push({x:tgt.x,y:tgt.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,life:.3,c:'#ff2050'});
+        }
+      }
+      continue;
+    }
+    if(e.kind==='kamikaze'){
+      // Beeline to nearest target (player or turret)
+      let btx=0, bty=0, bd=Infinity;
+      for(const p of S.team){ const L=Math.hypot(p.x-e.x,p.y-e.y); if(L<bd){bd=L;btx=p.x;bty=p.y;} }
+      for(const tr of S.turrets){ const L=Math.hypot(tr.x-e.x,tr.y-e.y); if(L<bd){bd=L;btx=tr.x;bty=tr.y;} }
+      if(bd===Infinity){ btx=0; bty=0; }
+      const dx=btx-e.x, dy=bty-e.y; const L=Math.hypot(dx,dy)||1;
+      e.ang = Math.atan2(dy,dx);
+      e.x += dx/L*e.sp; e.y += dy/L*e.sp;
+      if(L < 25){
+        explode(e.x,e.y,'#ff4040', 90);
+        for(const p of S.team){ if(Math.hypot(p.x-e.x,p.y-e.y)<70){ p.hp -= 30; if(p.hp<0)p.hp=0; } }
+        for(let ti=S.turrets.length-1;ti>=0;ti--){ const t=S.turrets[ti]; if(Math.hypot(t.x-e.x,t.y-e.y)<70){ t.hp-=50; if(t.hp<=0)S.turrets.splice(ti,1); } }
+        if(Math.hypot(e.x,e.y)<STATION.r+50) damageStation(20);
+        trackStat('kills',1); S.enemies.splice(i,1); continue;
+      }
+      continue;
+    }
+    if(e.kind==='elite'){
+      // Like fighter but stronger, has shield that regens
+      if(e.shield===undefined) e.shield=60;
+      if(e.shield<60 && Math.random()<0.02) e.shield = Math.min(60, e.shield+1);
+    }
     if(e.kind==='meteor'){
       e.x+=e.vx; e.y+=e.vy;
       if(Math.hypot(e.x,e.y) < STATION.r+e.r){
@@ -2709,6 +2889,115 @@ function updateHost(dt){
   }
   mouse.wx = (mouse.x - cv.width/2) / gameZoom + S.cam.x;
   mouse.wy = (mouse.y - cv.height/2) / gameZoom + S.cam.y;
+
+  // === Whales ===
+  for(let i=S.whales.length-1; i>=0; i--){
+    const w = S.whales[i];
+    w.wanderT -= dt; w.dropT -= dt;
+    if(w.wanderT <= 0){
+      w.wanderT = 3 + Math.random()*4;
+      if(w.hostile){
+        let best=S.team[0], bd=Infinity;
+        for(const t of S.team){ const L=Math.hypot(t.x-w.x,t.y-w.y); if(L<bd){bd=L; best=t;} }
+        if(best){ w.tx=best.x; w.ty=best.y; }
+      } else {
+        w.tx = w.x + (Math.random()-0.5)*600;
+        w.ty = w.y + (Math.random()-0.5)*600;
+        const d = Math.hypot(w.tx, w.ty);
+        if(d > WORLD_R-100){ w.tx *= (WORLD_R-100)/d; w.ty *= (WORLD_R-100)/d; }
+      }
+    }
+    const dx = w.tx-w.x, dy = w.ty-w.y;
+    const L = Math.hypot(dx,dy);
+    const sp = w.hostile ? 1.2 : 0.5;
+    if(L > 20){
+      w.vx = w.vx*0.95 + dx/L*sp*0.08;
+      w.vy = w.vy*0.95 + dy/L*sp*0.08;
+    } else { w.vx *= 0.95; w.vy *= 0.95; }
+    w.x += w.vx; w.y += w.vy;
+    w.ang = Math.atan2(w.vy, w.vx);
+    // Peaceful: drop bio periodically
+    if(!w.hostile && w.dropT <= 0){
+      w.dropT = 8 + Math.random()*5;
+      S.bio += 1;
+      flash('🐋 +1 바이오');
+      for(let k=0;k<8;k++) S.particles.push({x:w.x,y:w.y,vx:(Math.random()-.5)*2,vy:(Math.random()-.5)*2,life:.6,c:'#8fdf8f'});
+    }
+    // Hostile: ram damage
+    if(w.hostile){
+      for(const t of S.team){
+        if(Math.hypot(t.x-w.x, t.y-w.y) < w.r+15){
+          t.hp -= dt*20; if(t.hp<0) t.hp=0;
+        }
+      }
+      // Ram station
+      if(Math.hypot(w.x, w.y) < STATION.r + w.r){
+        damageStation(dt*8);
+      }
+    }
+  }
+
+  // === Traders ===
+  for(let i=S.traders.length-1; i>=0; i--){
+    const tr = S.traders[i];
+    tr.dwellT -= dt;
+    // Orbit around station
+    tr.orbitAng += dt * 0.15;
+    const orbitR = STATION.r + 260;
+    const tx = Math.cos(tr.orbitAng)*orbitR, ty = Math.sin(tr.orbitAng)*orbitR;
+    const dx = tx-tr.x, dy = ty-tr.y;
+    const L = Math.hypot(dx,dy);
+    if(L > 5){ tr.x += dx/L*1.2; tr.y += dy/L*1.2; tr.ang = Math.atan2(dy,dx); }
+    // Detect player proximity
+    tr.playerNear = false;
+    const me = myPlayer();
+    if(me && Math.hypot(me.x-tr.x, me.y-tr.y) < 70) tr.playerNear = true;
+    if(tr.dwellT <= 0){
+      flash('🛸 외계 상인 떠남');
+      S.traders.splice(i,1);
+    }
+  }
+
+  // === Derelicts ===
+  for(let i=S.derelicts.length-1; i>=0; i--){
+    const d = S.derelicts[i];
+    d.ang += d.spinRate;
+    if(d.looted){ S.derelicts.splice(i,1); continue; }
+    for(const t of S.team){
+      if(Math.hypot(t.x-d.x, t.y-d.y) < d.r+20){
+        d.looted = true;
+        // Apply loot
+        const parts = [];
+        for(const [k,v] of Object.entries(d.loot)){
+          if(k==='cred') S.cred = (S.cred||0)+v;
+          else S[k] = (S[k]||0)+v;
+          const sym={scrap:'⚙',core:'⚡',ore:'💎',bio:'🧬',plasma:'🧪',cable:'⛓',cred:'💰'}[k]||k;
+          parts.push(v+sym);
+        }
+        banner('⚱ 표류선 회수: '+parts.join(' '), 3, '#8896a8');
+        explode(d.x, d.y, '#8896a8', 40);
+        trackStat('derelictsLooted', 1);
+        break;
+      }
+    }
+  }
+
+  // === Trader interaction: E key or tap ===
+  if(!S._tradeCoolDown) S._tradeCoolDown = 0;
+  if(S._tradeCoolDown > 0) S._tradeCoolDown -= dt;
+  if((keys['e'] || touch.tradeTriggered) && S._tradeCoolDown<=0){
+    const me = myPlayer();
+    if(me){
+      for(const tr of S.traders){
+        if(Math.hypot(me.x-tr.x, me.y-tr.y) < 70){
+          openTradePanel(tr);
+          S._tradeCoolDown = 0.3;
+          touch.tradeTriggered = false;
+          break;
+        }
+      }
+    }
+  }
 
   // Expeditions & minigame button
   tickExpeditions(dt);
@@ -3017,6 +3306,9 @@ function killEnemy(j){
   else if(e.kind==='fighter'){ S.scrap+=10; S.core+=1; S.plasma+=1; S.cred+=12; if(Math.random()<0.5) S.cable+=1; }
   else if(e.kind==='hauler'){ S.scrap+=25; S.core+=3; S.ore+=1; S.plasma+=2; S.bio+=Math.round(2*bioMul); S.cable+=2; S.cred+=30; }
   else if(e.kind==='meteor'){ trackStat('meteorKills', 1); }
+  else if(e.kind==='stalker'){ S.scrap+=8; S.plasma+=2; S.bio+=1; S.cred+=15; }
+  else if(e.kind==='kamikaze'){ S.scrap+=4; S.cable+=2; S.cred+=8; }
+  else if(e.kind==='elite'){ S.scrap+=30; S.core+=4; S.plasma+=3; S.ore+=1; S.cred+=50; trackStat('eliteKills',1); banner('👑 엘리트 격파!', 1.5, '#ffd76a'); }
   trackStat('kills', 1);
   S.enemies.splice(j,1);
 }
@@ -3033,9 +3325,13 @@ function startNight(){
   S.nightReactorLow = false;
   const w=[]; const drones=5+S.day*2; const fighters=Math.max(0,S.day-1);
   const haulers=Math.max(0,Math.floor((S.day-2)/2));
+  const kamikazes = Math.max(0, Math.floor((S.day-1)/2));
+  const elites = S.day>=4 ? 1 + Math.floor((S.day-4)/3) : 0;
   for(let i=0;i<drones;i++) w.push('drone');
   for(let i=0;i<fighters;i++) w.push('fighter');
   for(let i=0;i<haulers;i++) w.push('hauler');
+  for(let i=0;i<kamikazes;i++) w.push('kamikaze');
+  for(let i=0;i<elites;i++) w.push('elite');
   if(S.day>=2 && Math.random()<0.5) for(let i=0;i<2;i++) w.push('meteor');
   for(let i=w.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [w[i],w[j]]=[w[j],w[i]]; }
   S.wave = w;
@@ -3328,6 +3624,9 @@ function render(){
   ctx.shadowBlur=0;
 
   for(const e of S.enemies) drawEnemy(e);
+  for(const w of S.whales||[]) drawWhale(w);
+  for(const tr of S.traders||[]) drawTrader(tr);
+  for(const d of S.derelicts||[]) drawDerelict(d);
 
   for(const p of S.particles){
     ctx.globalAlpha = Math.max(0,p.life*2);
@@ -3738,6 +4037,64 @@ function drawEnemy(e){
     // Guns
     ctx.fillStyle='#334';
     ctx.fillRect(20,-10,6,4); ctx.fillRect(20,6,6,4);
+  } else if(e.kind==='stalker'){
+    // Spider-like body
+    ctx.fillStyle = shade(e.color, -0.15);
+    ctx.strokeStyle = shade(e.color, -0.5); ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 12, 10, 0, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    // Legs
+    ctx.strokeStyle = shade(e.color, -0.4);
+    ctx.lineWidth = 2;
+    const spider = performance.now()*0.008;
+    for(let li=0; li<6; li++){
+      const la = (li-2.5)*0.6 + Math.sin(spider+li)*0.3;
+      const lx = Math.cos(la)*20, ly = Math.sin(la)*14;
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.quadraticCurveTo(lx*0.6, ly*0.6+Math.sin(spider+li*2)*3, lx, ly);
+      ctx.stroke();
+    }
+    // Glowing eyes
+    ctx.fillStyle = '#ff2050';
+    ctx.shadowColor = '#ff2050'; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(6, -3, 2, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(6, 3, 2, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+  } else if(e.kind==='kamikaze'){
+    const pulse = 0.7 + Math.sin(performance.now()*0.02)*0.3;
+    ctx.fillStyle = 'rgba(255,64,64,'+(pulse*0.5)+')';
+    ctx.beginPath(); ctx.arc(0, 0, 18*pulse, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = e.color;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    // Warning cross
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-5,-5); ctx.lineTo(5,5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5,-5); ctx.lineTo(-5,5); ctx.stroke();
+  } else if(e.kind==='elite'){
+    // Fighter-like but gold with shield
+    ctx.fillStyle = e.color;
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(20,0); ctx.lineTo(6,-8); ctx.lineTo(-10,-16); ctx.lineTo(-14,-10);
+    ctx.lineTo(-6,-4); ctx.lineTo(-16,0); ctx.lineTo(-6,4);
+    ctx.lineTo(-14,10); ctx.lineTo(-10,16); ctx.lineTo(6,8);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.ellipse(4,0,6,4,0,0,Math.PI*2); ctx.fill();
+    // Shield ring
+    if(e.shield > 0){
+      ctx.strokeStyle = `rgba(140,200,255,${0.3 + e.shield/60*0.5})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI*2); ctx.stroke();
+    }
+    // Crown
+    ctx.fillStyle = '#ffd76a';
+    ctx.beginPath();
+    ctx.moveTo(-6,-e.r-2); ctx.lineTo(-3,-e.r-8); ctx.lineTo(0,-e.r-3); ctx.lineTo(3,-e.r-8); ctx.lineTo(6,-e.r-2);
+    ctx.closePath(); ctx.fill();
   } else if(e.kind==='meteor'){
     // Rocky meteor
     ctx.fillStyle = e.color;
@@ -3766,6 +4123,156 @@ function drawEnemy(e){
     ctx.fillStyle='rgba(60,0,0,.7)'; ctx.fillRect(e.x-16,e.y-e.r-10,32,4);
     ctx.fillStyle='#f66'; ctx.fillRect(e.x-16,e.y-e.r-10,32*Math.max(0,e.hp/max),4);
   }
+}
+
+function drawWhale(w){
+  const t = performance.now()*0.002;
+  const bob = Math.sin(t*1.3)*3;
+  ctx.save();
+  ctx.translate(w.x, w.y+bob);
+  ctx.rotate(w.ang||0);
+  // Body — big blue-green ellipse
+  const bodyColor = w.hostile ? '#5f6a3a' : '#4a7a6a';
+  const bellyColor = w.hostile ? '#8f9a5a' : '#8fdf9a';
+  ctx.fillStyle = bodyColor;
+  ctx.strokeStyle = shade(bodyColor, -0.3); ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 55, 30, 0, 0, Math.PI*2);
+  ctx.fill(); ctx.stroke();
+  // Belly
+  ctx.fillStyle = bellyColor;
+  ctx.beginPath();
+  ctx.ellipse(0, 8, 45, 18, 0, 0, Math.PI*2);
+  ctx.fill();
+  // Tail
+  ctx.fillStyle = bodyColor;
+  ctx.beginPath();
+  ctx.moveTo(-50, 0);
+  ctx.lineTo(-80, -18 + Math.sin(t*3)*8);
+  ctx.lineTo(-72, 0);
+  ctx.lineTo(-80, 18 + Math.sin(t*3+1)*8);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // Eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(30, -8, 5, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = w.hostile ? '#ff2050' : '#000';
+  ctx.beginPath(); ctx.arc(31, -8, 2.5, 0, Math.PI*2); ctx.fill();
+  // Mouth
+  ctx.strokeStyle = shade(bodyColor, -0.5); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(40, 5, 8, 0.2, 0.8); ctx.stroke();
+  // Fins
+  ctx.fillStyle = shade(bodyColor, -0.15);
+  ctx.beginPath();
+  ctx.ellipse(5, -30, 12, 6, -0.4, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(5, 30, 12, 6, 0.4, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+  // HP bar
+  if(w.hp < w.hpMax){
+    ctx.fillStyle='rgba(60,0,0,.7)'; ctx.fillRect(w.x-30, w.y-w.r-16, 60, 4);
+    ctx.fillStyle = w.hostile ? '#ff6a8a' : '#8fdf8f';
+    ctx.fillRect(w.x-30, w.y-w.r-16, 60*(w.hp/w.hpMax), 4);
+  }
+  // Label
+  ctx.fillStyle = w.hostile ? '#ff6a8a' : '#8fdf8f';
+  ctx.font = 'bold 11px "Segoe UI"';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('🐋 ' + (w.hostile?'분노한 고래':'우주 고래'), w.x, w.y-w.r-24);
+}
+
+function drawTrader(tr){
+  const t = performance.now()*0.001;
+  ctx.save();
+  ctx.translate(tr.x, tr.y);
+  // Glow
+  const glow = ctx.createRadialGradient(0,0,0,0,0,50);
+  glow.addColorStop(0, 'rgba(196,143,255,.3)');
+  glow.addColorStop(1, 'transparent');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0,0,50,0,Math.PI*2); ctx.fill();
+  // Hexagonal ship body
+  ctx.fillStyle = '#3a1a5a';
+  ctx.strokeStyle = '#c48fff'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for(let i=0;i<6;i++){
+    const a = i*Math.PI/3 + t*0.2;
+    if(i===0) ctx.moveTo(Math.cos(a)*22, Math.sin(a)*22);
+    else ctx.lineTo(Math.cos(a)*22, Math.sin(a)*22);
+  }
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  // Inner ring
+  ctx.strokeStyle = '#e6c8ff'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI*2); ctx.stroke();
+  // Core
+  const pulse = 0.7+Math.sin(t*4)*0.3;
+  ctx.fillStyle = '#c48fff';
+  ctx.shadowColor = '#c48fff'; ctx.shadowBlur = 12;
+  ctx.beginPath(); ctx.arc(0, 0, 8*pulse, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
+  // Antenna
+  for(let i=0;i<3;i++){
+    const a = i*Math.PI*2/3 + t*0.5;
+    ctx.strokeStyle = '#8ff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a)*22, Math.sin(a)*22);
+    ctx.lineTo(Math.cos(a)*30, Math.sin(a)*30);
+    ctx.stroke();
+    ctx.fillStyle = '#8ff';
+    ctx.beginPath(); ctx.arc(Math.cos(a)*30, Math.sin(a)*30, 2, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+  // Label + prompt
+  ctx.fillStyle = '#c48fff';
+  ctx.font = 'bold 11px "Segoe UI"';
+  ctx.textAlign = 'center';
+  ctx.fillText('🛸 외계 상인 ('+Math.ceil(tr.dwellT)+'s)', tr.x, tr.y-38);
+  if(tr.playerNear){
+    ctx.fillStyle = '#ffd76a';
+    ctx.font = 'bold 12px "Segoe UI"';
+    ctx.fillText('[E] 또는 탭으로 거래', tr.x, tr.y+45);
+  }
+}
+
+function drawDerelict(d){
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  ctx.rotate(d.ang);
+  // Broken hull
+  ctx.fillStyle = '#3a4556';
+  ctx.strokeStyle = '#7a8a9a'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-25, -10); ctx.lineTo(15, -18);
+  ctx.lineTo(28, -4); ctx.lineTo(22, 8);
+  ctx.lineTo(-5, 14); ctx.lineTo(-28, 6);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // Broken pieces
+  ctx.fillStyle = '#556678';
+  ctx.beginPath();
+  ctx.moveTo(-15, -8); ctx.lineTo(-8, -14); ctx.lineTo(-2, -6); ctx.closePath();
+  ctx.fill();
+  // Debris trail
+  for(let i=0;i<3;i++){
+    ctx.fillStyle = '#556678';
+    ctx.fillRect(-32 - i*8, -3 + i*4, 4, 4);
+  }
+  // Broken window
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(8, -6, 8, 4);
+  // Signal blip
+  const pulse = 0.4+Math.sin(performance.now()*0.005)*0.6;
+  ctx.fillStyle = 'rgba(255,215,106,'+pulse+')';
+  ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+  // Prompt
+  ctx.fillStyle = '#ffd76a';
+  ctx.font = 'bold 10px "Segoe UI"';
+  ctx.textAlign = 'center';
+  ctx.fillText('⚱ 표류선', d.x, d.y-38);
 }
 
 function drawPlayer(p){
@@ -4324,6 +4831,68 @@ function updateExpHud(){
     el.appendChild(row);
   }
 }
+
+// ================================================================
+//  TRADE PANEL
+// ================================================================
+let currentTrader = null;
+function openTradePanel(tr){
+  currentTrader = tr;
+  const el = document.getElementById('tradeOptions');
+  el.innerHTML = '';
+  const symbols = {scrap:'⚙',core:'⚡',ore:'💎',bio:'🧬',plasma:'🧪',cable:'⛓'};
+  const names = {scrap:'고철',core:'코어',ore:'광물',bio:'바이오',plasma:'플라즈마',cable:'케이블'};
+  tr.stock.forEach((offer, i)=>{
+    const canAfford = (S[offer.take]||0) >= offer.takeAmt;
+    const btn = document.createElement('div');
+    btn.style.cssText = `background:${canAfford?'linear-gradient(135deg,rgba(30,50,90,.7),rgba(10,15,35,.7))':'rgba(30,20,20,.4)'};
+      border:1px solid ${canAfford?'#c48fff':'#833'};border-radius:10px;padding:14px;margin-bottom:8px;
+      cursor:${canAfford?'pointer':'not-allowed'};color:#e6f2ff;transition:all .15s;`;
+    btn.innerHTML = `<div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      <span style="color:#8fdf8f;">+${offer.giveAmt}${symbols[offer.give]} ${names[offer.give]}</span>
+      <span style="color:#7fa8d8;margin:0 10px;">←</span>
+      <span style="color:#ff8fa8;">${offer.takeAmt}${symbols[offer.take]} ${names[offer.take]}</span>
+    </div>
+    <div style="font-size:10.5px;color:#7fa8d8;letter-spacing:1px;">${canAfford?'✓ 거래 가능':'✕ 자원 부족'}</div>`;
+    if(canAfford){
+      btn.onclick = ()=>doTrade(tr, i);
+      btn.onmouseover = ()=>{ btn.style.transform='translateX(4px)'; btn.style.borderColor='#8ff'; };
+      btn.onmouseout = ()=>{ btn.style.transform='translateX(0)'; btn.style.borderColor='#c48fff'; };
+    }
+    el.appendChild(btn);
+  });
+  document.getElementById('tradePanel').style.display='flex';
+}
+function closeTradePanel(){
+  document.getElementById('tradePanel').style.display='none';
+  currentTrader = null;
+}
+function doTrade(tr, idx){
+  const offer = tr.stock[idx];
+  if(!offer) return;
+  if((S[offer.take]||0) < offer.takeAmt){ flash('자원 부족'); return; }
+  S[offer.take] -= offer.takeAmt;
+  S[offer.give] = (S[offer.give]||0) + offer.giveAmt;
+  flash('✓ 거래 완료');
+  trackStat('trades', 1);
+  tr.stock.splice(idx, 1);
+  if(!tr.stock.length){
+    closeTradePanel();
+    flash('🛸 상인 재고 소진 - 떠남');
+    const ti = S.traders.indexOf(tr);
+    if(ti>=0) S.traders.splice(ti, 1);
+  } else {
+    openTradePanel(tr); // refresh
+  }
+}
+
+// Keyboard E for trade
+addEventListener('keydown', e=>{
+  if(!running) return;
+  if(e.key.toLowerCase()==='e' && !currentTrader){
+    // handled in update loop via keys['e']
+  }
+});
 
 function updateNetIndicator(){
   const el = document.getElementById('netStat');
