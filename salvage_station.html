@@ -2,6 +2,11 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#050818">
 <title>SALVAGE STATION — 우주 쓰레기 정거장</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
@@ -484,6 +489,72 @@
 
 <div id="teamHud"></div>
 <div id="netStat" style="display:none;"></div>
+
+<!-- ============ MOBILE CONTROLS ============ -->
+<style>
+  #mobileControls{position:fixed;inset:0;pointer-events:none;z-index:50;display:none;}
+  #mobileControls.show{display:block;}
+  .stick{position:absolute;bottom:24px;width:130px;height:130px;pointer-events:auto;
+    background:radial-gradient(circle,rgba(140,220,255,.15),rgba(6,12,24,.6));
+    border:2px solid rgba(140,240,255,.3);border-radius:50%;touch-action:none;
+    box-shadow:inset 0 0 30px rgba(140,240,255,.1);}
+  #leftStick{left:24px;}
+  #rightStick{right:24px;}
+  .stick-thumb{position:absolute;top:50%;left:50%;width:56px;height:56px;
+    background:radial-gradient(circle at 30% 30%,#8ff,#4a9);border-radius:50%;
+    transform:translate(-50%,-50%);pointer-events:none;box-shadow:0 0 16px rgba(140,240,255,.6);
+    border:2px solid rgba(255,255,255,.4);}
+  .stick-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+    color:rgba(140,220,255,.5);font-size:24px;pointer-events:none;user-select:none;}
+  .mobile-btns{position:absolute;bottom:170px;right:24px;display:flex;flex-direction:column;gap:10px;
+    pointer-events:auto;}
+  .mobile-btns button{width:58px;height:58px;border-radius:50%;font-size:22px;line-height:1;
+    background:radial-gradient(circle at 30% 30%,rgba(30,50,90,.9),rgba(6,12,24,.9));
+    border:2px solid rgba(140,240,255,.4);color:#e6f2ff;cursor:pointer;
+    touch-action:manipulation;box-shadow:0 4px 12px rgba(0,0,0,.4);
+    transition:transform .05s;padding:0;}
+  .mobile-btns button:active{transform:scale(.92);background:radial-gradient(circle at 30% 30%,#8ff,rgba(6,12,24,.9));}
+  .mobile-btns .mb-shield{border-color:#8fc8ff;}
+  .mobile-btns .mb-grenade{border-color:#ff9a3a;}
+  .mobile-btns .mb-repair{border-color:#8fdf8f;}
+  .mobile-btns .mb-beam.on{background:radial-gradient(circle at 30% 30%,#8ff,#2a7);border-color:#8ff;}
+  .mobile-topbtns{position:absolute;top:60px;left:12px;display:flex;flex-direction:column;gap:8px;pointer-events:auto;}
+  .mobile-topbtns button{width:44px;height:44px;border-radius:8px;font-size:18px;
+    background:rgba(6,12,24,.85);border:1px solid rgba(140,240,255,.3);color:#e6f2ff;
+    cursor:pointer;padding:0;}
+  /* Responsive shop: full-screen sheet on narrow */
+  @media (max-width:800px){
+    #shop{right:6px;left:6px;width:auto;top:52px;max-height:70vh;}
+    #help{display:none !important;}
+    #teamHud{top:110px;font-size:11px;}
+    .teammate{min-width:120px;padding:4px 8px;}
+    #hud{padding:4px 6px;font-size:11px;gap:5px;}
+    #hud .tag{padding:2px 6px;font-size:10.5px;}
+    #hud .phase-bar{max-width:60px;}
+  }
+</style>
+
+<div id="mobileControls">
+  <div id="leftStick" class="stick">
+    <div class="stick-hint">✥</div>
+    <div class="stick-thumb"></div>
+  </div>
+  <div id="rightStick" class="stick">
+    <div class="stick-hint">◎</div>
+    <div class="stick-thumb"></div>
+  </div>
+  <div class="mobile-btns">
+    <button class="mb-beam" data-a="beam" title="견인빔">📡</button>
+    <button class="mb-shield" data-a="shield" title="실드">🛡</button>
+    <button class="mb-repair" data-a="repair" title="수리">🔧</button>
+    <button class="mb-grenade" data-a="grenade" title="수류탄">🧨</button>
+  </div>
+  <div class="mobile-topbtns">
+    <button data-a="build" title="빌드">🏗</button>
+    <button data-a="ach" title="업적">🏆</button>
+    <button data-a="exit" title="나가기">✕</button>
+  </div>
+</div>
 <button id="achBtn" style="display:none;" onclick="openAchievements()">🏆 업적 (T)</button>
 <div id="achToast"></div>
 <div id="achPanel">
@@ -648,7 +719,7 @@ function logout(){
   }
 }
 
-// Auto-login if saved user exists
+// Auto-login if saved user exists + init mobile controls
 window.addEventListener('DOMContentLoaded', ()=>{
   try {
     const saved = localStorage.getItem('salvage_current_user');
@@ -656,6 +727,7 @@ window.addEventListener('DOMContentLoaded', ()=>{
       loginAs(saved);
     }
   } catch(e){}
+  try { initMobileControls(); } catch(e){}
 });
 
 // Enter key handlers
@@ -1388,6 +1460,82 @@ const S = {};
 const P = {};
 let running = false;
 let mouse={x:0,y:0,wx:0,wy:0,down:false,right:false}, keys={};
+
+// ===== Mobile touch controls =====
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const touch = {
+  L:{active:false,dx:0,dy:0,id:-1,cx:0,cy:0},
+  R:{active:false,dx:0,dy:0,id:-1,cx:0,cy:0},
+  beamOn:false,
+};
+
+function setupStick(elId, state){
+  const el = document.getElementById(elId);
+  const thumb = el.querySelector('.stick-thumb');
+  const maxR = 42;
+  function update(x,y){
+    let dx = x-state.cx, dy = y-state.cy;
+    const L = Math.hypot(dx,dy);
+    if(L>maxR){ dx=dx/L*maxR; dy=dy/L*maxR; }
+    state.dx = dx/maxR; state.dy = dy/maxR;
+    thumb.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  }
+  el.addEventListener('touchstart', e=>{
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    const r = el.getBoundingClientRect();
+    state.cx = r.left+r.width/2; state.cy = r.top+r.height/2;
+    state.active = true; state.id = t.identifier;
+    update(t.clientX, t.clientY);
+  }, {passive:false});
+  el.addEventListener('touchmove', e=>{
+    e.preventDefault();
+    for(const t of e.changedTouches){
+      if(t.identifier===state.id) update(t.clientX, t.clientY);
+    }
+  }, {passive:false});
+  const endHandler = e=>{
+    for(const t of e.changedTouches){
+      if(t.identifier===state.id){
+        state.active=false; state.dx=0; state.dy=0; state.id=-1;
+        thumb.style.transform = 'translate(-50%,-50%)';
+      }
+    }
+  };
+  el.addEventListener('touchend', endHandler, {passive:false});
+  el.addEventListener('touchcancel', endHandler, {passive:false});
+}
+
+function initMobileControls(){
+  const mc = document.getElementById('mobileControls');
+  if(!isTouchDevice) return;
+  mc.classList.add('show');
+  setupStick('leftStick', touch.L);
+  setupStick('rightStick', touch.R);
+  document.querySelectorAll('.mobile-btns button, .mobile-topbtns button').forEach(b=>{
+    b.addEventListener('touchstart', e=>{ e.preventDefault(); handleMobileBtn(b); }, {passive:false});
+    b.addEventListener('click', e=>{ e.preventDefault(); handleMobileBtn(b); });
+  });
+  // Prevent page scroll on canvas touch
+  cv.addEventListener('touchmove', e=>e.preventDefault(), {passive:false});
+}
+
+function handleMobileBtn(b){
+  const a = b.dataset.a;
+  if(a==='beam'){
+    touch.beamOn = !touch.beamOn;
+    b.classList.toggle('on', touch.beamOn);
+  }
+  else if(a==='shield') doAction('shield');
+  else if(a==='repair') doAction('repair');
+  else if(a==='grenade') doAction('grenade');
+  else if(a==='build'){
+    const sh = document.getElementById('shop');
+    sh.style.display = sh.style.display==='none'?'block':'none';
+  }
+  else if(a==='ach') openAchievements();
+  else if(a==='exit') leaveToLobby();
+}
 const WORLD_R = 2800;
 const STATION = { x: 0, y: 0, r: 150, baseR: 150 };
 
@@ -1856,7 +2004,7 @@ function updateHost(dt){
   // Beam application for all players who are beaming
   for(const t of S.team){
     let beaming = false, aim = t.ang;
-    if(t.me){ beaming = mouse.down && !S.build; aim = t.ang; }
+    if(t.me){ beaming = (mouse.down || touch.beamOn) && !S.build; aim = t.ang; }
     else if(t.remote && !t.disconnected && t.input){ beaming = !!t.input.beam; aim = t.input.ang||t.ang; }
     if(!beaming) continue;
     for(const d of S.debris){
@@ -2207,23 +2355,42 @@ function updatePlayerLocal(p, dt){
   let mx=0,my=0;
   if(keys['w']) my-=1; if(keys['s']) my+=1;
   if(keys['a']) mx-=1; if(keys['d']) mx+=1;
-  const ml=Math.hypot(mx,my); if(ml>0){ mx/=ml; my/=ml; }
+  // Mobile left stick overrides keyboard when active
+  if(isTouchDevice && touch.L.active){
+    mx = touch.L.dx; my = touch.L.dy;
+    if(Math.abs(mx)<0.15) mx=0; if(Math.abs(my)<0.15) my=0;
+  }
+  const ml=Math.hypot(mx,my); if(ml>0 && ml<1){ /* analog */ } else if(ml>1){ mx/=ml; my/=ml; }
   const spdBoost = (p.stimT>0 ? 1.5 : 1) * (S.hasThruster ? 1.15 : 1);
   p.vx = p.vx*0.85 + mx*p.speed*spdBoost*0.55;
   p.vy = p.vy*0.85 + my*p.speed*spdBoost*0.55;
   p.x += p.vx; p.y += p.vy;
   const pd = Math.hypot(p.x,p.y);
   if(pd > WORLD_R){ p.x=p.x/pd*WORLD_R; p.y=p.y/pd*WORLD_R; }
-  p.ang = Math.atan2(mouse.wy-p.y, mouse.wx-p.x);
+
+  // Aim
+  let autoShoot = false;
+  if(isTouchDevice && touch.R.active){
+    const rmag = Math.hypot(touch.R.dx, touch.R.dy);
+    if(rmag > 0.2){
+      p.ang = Math.atan2(touch.R.dy, touch.R.dx);
+      autoShoot = true;
+    }
+  } else {
+    p.ang = Math.atan2(mouse.wy-p.y, mouse.wx-p.x);
+  }
   p.thruster = Math.hypot(mx,my);
   if(p.cool>0) p.cool--;
-  if((keys[' '] || mouse.right) && p.cool<=0){
+  const shooting = keys[' '] || mouse.right || autoShoot;
+  if(shooting && p.cool<=0){
     p.cool = p.fireRate;
     fireBullet(p);
   }
+  // Beam active state
+  const beamActive = mouse.down || touch.beamOn;
   // If client, send input to host
   if(NET.isOnline && !NET.isHost){
-    clientSend({t:'input', mx, my, ang:p.ang, shoot:!!(keys[' ']||mouse.right), beam:mouse.down && !S.build });
+    clientSend({t:'input', mx, my, ang:p.ang, shoot:!!shooting, beam:beamActive && !S.build });
   }
 }
 
@@ -2606,7 +2773,7 @@ function updateClient(dt){
     if(keys['a']) mx-=1; if(keys['d']) mx+=1;
     const ml=Math.hypot(mx,my); if(ml>0){ mx/=ml; my/=ml; }
     const ang = Math.atan2(mouse.wy-me.y, mouse.wx-me.x);
-    clientSend({t:'input', mx, my, ang, shoot:!!(keys[' ']||mouse.right), beam:mouse.down && !S.build});
+    clientSend({t:'input', mx, my, ang, shoot:!!(keys[' ']||mouse.right), beam:(mouse.down||touch.beamOn) && !S.build});
     // Camera on me
     S.cam.x += (me.x - S.cam.x)*0.12;
     S.cam.y += (me.y - S.cam.y)*0.12;
@@ -2765,7 +2932,7 @@ function render(){
 
   // My tractor beam
   const me = myPlayer();
-  if(me && mouse.down && !S.build){
+  if(me && (mouse.down||touch.beamOn) && !S.build){
     ctx.strokeStyle='rgba(140,240,255,.25)'; ctx.lineWidth=1;
     ctx.fillStyle='rgba(140,240,255,.05)';
     ctx.beginPath(); ctx.arc(me.x,me.y,S.beamRange*(me.beamMul||1),0,Math.PI*2);

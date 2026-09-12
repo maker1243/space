@@ -22,7 +22,7 @@ try:
 except Exception:
     pass
 
-PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+PORT = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get("PORT", 8080))
 DIRECTORY = str(Path(__file__).parent.resolve())
 
 
