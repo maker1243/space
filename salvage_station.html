@@ -617,13 +617,52 @@
     cursor:pointer;padding:0;}
   /* Responsive shop: full-screen sheet on narrow */
   @media (max-width:800px){
-    #shop{right:6px;left:6px;width:auto;top:52px;max-height:70vh;}
+    #shop{right:4px;left:auto;width:200px;top:48px;max-height:60vh;font-size:11px;}
+    #shop h3{font-size:11px;letter-spacing:2px;}
+    #shop button[data-b]{padding:4px 6px;font-size:10.5px;}
+    #shop .k{font-size:9.5px;}
+    #shop .stab{font-size:9px;padding:4px 2px;}
     #help{display:none !important;}
-    #teamHud{top:110px;font-size:11px;}
-    .teammate{min-width:120px;padding:4px 8px;}
-    #hud{padding:4px 6px;font-size:11px;gap:5px;}
-    #hud .tag{padding:2px 6px;font-size:10.5px;}
-    #hud .phase-bar{max-width:60px;}
+    #teamHud{top:104px;left:6px;font-size:10px;gap:3px;}
+    .teammate{min-width:100px;padding:3px 6px;font-size:10px;}
+    .teammate .trole{font-size:8.5px;}
+    #hud{padding:3px 4px;font-size:10px;gap:3px;}
+    #hud .tag{padding:1px 5px;font-size:9.5px;border-radius:10px;}
+    #hud .phase-bar{max-width:40px;height:4px;}
+    /* Smaller joysticks */
+    .stick{width:100px;height:100px;bottom:16px;}
+    #leftStick{left:14px;} #rightStick{right:14px;}
+    .stick-thumb{width:42px;height:42px;}
+    .stick-hint{font-size:18px;}
+    /* Smaller action buttons */
+    .mobile-btns{bottom:130px;right:14px;gap:6px;}
+    .mobile-btns button{width:44px;height:44px;font-size:17px;}
+    .mobile-topbtns{top:48px;left:6px;gap:5px;}
+    .mobile-topbtns button{width:36px;height:36px;font-size:14px;}
+    /* Smaller top-right game buttons */
+    #achBtn,#expBtn{font-size:9px;padding:3px 6px;top:48px;}
+    #achBtn{right:60px;}
+    #expBtn{right:130px;}
+    /* Expedition HUD */
+    #expActiveHud{top:96px;right:6px;}
+    .exp-hud-row{font-size:9px;padding:2px 5px;}
+    /* Achievement toast */
+    .ach-t{min-width:220px;padding:8px 14px;font-size:11px;}
+    .ach-t .ach-i{font-size:20px;}
+    .ach-t .ach-title{font-size:12px;}
+    /* Banner */
+    #banner{font-size:28px;letter-spacing:4px;}
+    /* User badge */
+    #userBadge{font-size:9px;padding:4px 8px;}
+  }
+  @media (max-width:500px){
+    #shop{width:170px;font-size:10px;}
+    #hud{font-size:9px;gap:2px;}
+    #hud .tag{padding:1px 4px;font-size:9px;}
+    .stick{width:88px;height:88px;}
+    .stick-thumb{width:36px;height:36px;}
+    .mobile-btns button{width:40px;height:40px;font-size:15px;}
+    .mobile-btns{bottom:112px;}
   }
 </style>
 
@@ -1562,10 +1601,15 @@ function leaveToLobby(){
 // ================================================================
 const cv = document.getElementById('cv');
 const ctx = cv.getContext('2d');
+let gameZoom = 1;
 function resize(){
   const hud = document.getElementById('hud');
   cv.width = Math.max(300, innerWidth);
   cv.height = Math.max(300, innerHeight - (hud?hud.offsetHeight:0));
+  // Zoom out on narrow screens so more world fits
+  if(innerWidth < 500) gameZoom = 0.55;
+  else if(innerWidth < 800) gameZoom = 0.7;
+  else gameZoom = 1;
 }
 addEventListener('resize', ()=>{ if(running) resize(); });
 
@@ -2452,8 +2496,8 @@ function updateHost(dt){
     S.cam.x += (me.x - S.cam.x)*0.08;
     S.cam.y += (me.y - S.cam.y)*0.08;
   }
-  mouse.wx = mouse.x - cv.width/2 + S.cam.x;
-  mouse.wy = mouse.y - cv.height/2 + S.cam.y;
+  mouse.wx = (mouse.x - cv.width/2) / gameZoom + S.cam.x;
+  mouse.wy = (mouse.y - cv.height/2) / gameZoom + S.cam.y;
 
   // Expeditions & minigame button
   tickExpeditions(dt);
@@ -2896,8 +2940,8 @@ function updateClient(dt){
     S.cam.x += (me.x - S.cam.x)*0.12;
     S.cam.y += (me.y - S.cam.y)*0.12;
   }
-  mouse.wx = mouse.x - cv.width/2 + S.cam.x;
-  mouse.wy = mouse.y - cv.height/2 + S.cam.y;
+  mouse.wx = (mouse.x - cv.width/2) / gameZoom + S.cam.x;
+  mouse.wy = (mouse.y - cv.height/2) / gameZoom + S.cam.y;
 
   updateHUD();
   updateNetIndicator();
@@ -2947,7 +2991,9 @@ function render(){
   ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
 
   ctx.save();
-  ctx.translate(w/2 - S.cam.x, h/2 - S.cam.y);
+  ctx.translate(w/2, h/2);
+  if(gameZoom !== 1) ctx.scale(gameZoom, gameZoom);
+  ctx.translate(-S.cam.x, -S.cam.y);
 
   for(const n of nebulas){
     const gr = ctx.createRadialGradient(n.x,n.y,0,n.x,n.y,n.r);
