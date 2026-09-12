@@ -490,6 +490,99 @@
 <div id="teamHud"></div>
 <div id="netStat" style="display:none;"></div>
 
+<!-- ============ MINI-GAME OVERLAY ============ -->
+<style>
+  #miniGame{position:fixed;inset:0;background:rgba(3,6,14,.85);z-index:250;display:none;
+    align-items:center;justify-content:center;backdrop-filter:blur(4px);}
+  #miniGame.show{display:flex;}
+  #miniGame .mg-panel{background:linear-gradient(180deg,#0a1224,#050818);border:2px solid #ffd76a;
+    border-radius:14px;padding:20px 24px;max-width:520px;width:100%;
+    box-shadow:0 20px 80px rgba(255,180,60,.3);}
+  #miniGame h2{margin:0 0 4px;font-size:20px;color:#ffd76a;letter-spacing:5px;text-align:center;}
+  #miniGame .mg-hint{color:#7fa8d8;font-size:12px;text-align:center;margin-bottom:14px;letter-spacing:2px;}
+  #miniGame canvas{display:block;width:100%;background:#02040a;border:1px solid #234;border-radius:8px;}
+  #miniGame .mg-btns{display:flex;gap:8px;margin-top:12px;}
+  #miniGame .mg-btns button{flex:1;padding:10px;border-radius:8px;border:none;cursor:pointer;
+    font-family:inherit;font-weight:700;letter-spacing:2px;font-size:13px;}
+  #miniGame .mg-btns .cancel{background:rgba(50,20,20,.6);color:#f88;border:1px solid #833;}
+  #miniGame .mg-status{text-align:center;font-size:14px;color:#8ff;margin-top:10px;font-weight:700;letter-spacing:2px;}
+  #grinderBoost{position:absolute;background:linear-gradient(135deg,#ffd76a,#ff9a3a);color:#1a0a00;
+    border:none;padding:6px 12px;border-radius:20px;cursor:pointer;font-family:inherit;font-weight:700;
+    font-size:11px;letter-spacing:2px;z-index:55;display:none;pointer-events:auto;
+    box-shadow:0 4px 12px rgba(255,180,60,.5);animation:boostPulse 1.2s infinite;}
+  @keyframes boostPulse{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
+
+  /* Expedition panel */
+  #expPanel{position:fixed;inset:0;background:rgba(3,6,14,.9);z-index:280;display:none;
+    align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(6px);}
+  #expPanel.show{display:flex;}
+  #expPanel .inner{max-width:720px;width:100%;max-height:84vh;background:linear-gradient(180deg,#0a1224,#050818);
+    border:1px solid rgba(160,96,255,.3);border-radius:14px;padding:24px;overflow-y:auto;position:relative;
+    box-shadow:0 20px 80px rgba(80,20,180,.4);}
+  #expPanel h2{margin:0 0 6px;font-size:24px;letter-spacing:6px;
+    background:linear-gradient(90deg,#a060ff,#c48fff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+  #expPanel .sub{color:#7fa8d8;font-size:12px;letter-spacing:2px;margin-bottom:16px;}
+  #expPanel .close{position:absolute;top:20px;right:20px;background:none;border:1px solid #234;color:#8ff;
+    padding:6px 14px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px;letter-spacing:2px;}
+  .exp-active{margin-bottom:16px;}
+  .exp-active h3{margin:0 0 8px;font-size:12px;letter-spacing:3px;color:#8fdf8f;}
+  .exp-row{background:rgba(10,18,36,.7);border:1px solid rgba(80,140,220,.2);border-radius:8px;
+    padding:10px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:center;}
+  .exp-row .ei{font-size:24px;}
+  .exp-row .en{flex:1;font-size:13px;font-weight:700;}
+  .exp-row .et{color:#ffd76a;font-size:11px;letter-spacing:1px;font-family:Consolas,monospace;}
+  .exp-bar{height:5px;background:#0a1420;border-radius:3px;overflow:hidden;flex:2;min-width:80px;}
+  .exp-bar .fill{height:100%;background:linear-gradient(90deg,#8ff,#ffd76a);transition:width .3s;}
+  .exp-avail{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}
+  .exp-card{background:rgba(10,18,36,.7);border:1px solid rgba(80,140,220,.2);border-radius:10px;padding:12px;
+    cursor:pointer;transition:all .15s;}
+  .exp-card:hover{border-color:#a060ff;transform:translateY(-2px);box-shadow:0 8px 24px rgba(120,80,220,.3);}
+  .exp-card.busy{opacity:.45;cursor:not-allowed;}
+  .exp-card .ei{font-size:32px;filter:drop-shadow(0 0 8px currentColor);}
+  .exp-card.c1{color:#8fdf8f;} .exp-card.c2{color:#ffd76a;} .exp-card.c3{color:#8ff;} .exp-card.c4{color:#c48fff;}
+  .exp-card .en{font-size:14px;font-weight:700;color:#fff;margin-top:4px;letter-spacing:2px;}
+  .exp-card .ed{font-size:11px;color:#7fa8d8;margin-top:4px;line-height:1.4;}
+  .exp-card .ec{font-size:11px;color:#ff8fa8;margin-top:6px;}
+  .exp-card .er{font-size:11px;color:#8fdf8f;margin-top:2px;}
+  .exp-card .eu{font-size:10px;color:#8ff;margin-top:4px;letter-spacing:1px;}
+  #expBtn{position:absolute;top:56px;right:220px;background:linear-gradient(135deg,#a060ff,#c48fff);
+    color:#fff;border:none;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:inherit;
+    font-weight:700;font-size:11px;letter-spacing:2px;box-shadow:0 4px 12px rgba(120,80,220,.4);display:none;}
+  #expBtn:hover{transform:translateY(-1px);}
+  #expActiveHud{position:absolute;top:110px;right:12px;display:flex;flex-direction:column;gap:4px;
+    font-size:10px;pointer-events:none;}
+  .exp-hud-row{background:rgba(6,12,24,.85);border:1px solid rgba(160,96,255,.4);border-radius:6px;
+    padding:3px 8px;color:#c48fff;letter-spacing:1px;}
+</style>
+
+<div id="miniGame">
+  <div class="mg-panel">
+    <h2 id="mgTitle">정밀 해체</h2>
+    <div class="mg-hint" id="mgHint">-</div>
+    <canvas id="mgCanvas" width="480" height="220"></canvas>
+    <div class="mg-status" id="mgStatus">-</div>
+    <div class="mg-btns">
+      <button class="cancel" onclick="cancelMinigame()">✕ 취소 (기본 보상)</button>
+    </div>
+  </div>
+</div>
+
+<button id="grinderBoost" onclick="startGrinderMinigame()">✨ 정밀 해체 (2x 보상)</button>
+
+<button id="expBtn" onclick="openExpeditions()">🚀 탐사 파견</button>
+<div id="expActiveHud"></div>
+
+<div id="expPanel">
+  <div class="inner">
+    <button class="close" onclick="closeExpeditions()">✕ 닫기</button>
+    <h2>🚀 EXPEDITIONS</h2>
+    <div class="sub" id="expSub">탐사선을 파견해 희귀 자원을 가져오세요 (최대 3개 동시)</div>
+    <div class="exp-active" id="expActive"></div>
+    <h3 style="color:#8ff;font-size:12px;letter-spacing:3px;margin:14px 0 8px;">사용 가능한 원정</h3>
+    <div class="exp-avail" id="expAvail"></div>
+  </div>
+</div>
+
 <!-- ============ MOBILE CONTROLS ============ -->
 <style>
   #mobileControls{position:fixed;inset:0;pointer-events:none;z-index:50;display:none;}
@@ -1406,6 +1499,7 @@ function showGameView(){
   document.getElementById('shop').style.display='block';
   document.getElementById('help').style.display='block';
   document.getElementById('achBtn').style.display='block';
+  document.getElementById('expBtn').style.display='block';
   document.getElementById('netStat').style.display = NET.isOnline?'block':'none';
 }
 
@@ -1450,6 +1544,9 @@ function leaveToLobby(){
   document.getElementById('help').style.display='none';
   document.getElementById('netStat').style.display='none';
   document.getElementById('achBtn').style.display='none';
+  document.getElementById('expBtn').style.display='none';
+  document.getElementById('grinderBoost').style.display='none';
+  document.getElementById('expActiveHud').innerHTML='';
   document.getElementById('teamHud').innerHTML='';
   running = false;
   if(currentUser){
@@ -1649,6 +1746,7 @@ function initGameHost(){
   S.build=null; S.shieldT=0;
   S.mines=[]; S.turrets=[]; S.torches=[]; S.walls=[]; S.modules=[];
   S.deckCount = 0;
+  S.expeditions = [];
   STATION.r = STATION.baseR; // reset expansion
   // Grinder (제련기) — at bottom of station
   S.grinder = { ang: Math.PI/2, queue: [], processing: null, processT: 0, grindTime: 1.5, chuteR: 46 };
@@ -2356,6 +2454,10 @@ function updateHost(dt){
   }
   mouse.wx = mouse.x - cv.width/2 + S.cam.x;
   mouse.wy = mouse.y - cv.height/2 + S.cam.y;
+
+  // Expeditions & minigame button
+  tickExpeditions(dt);
+  updateGrinderBoostBtn();
 
   if(S.hull<=0){
     banner('☠ STATION LOST', 3, '#ff6a8a');
@@ -3596,6 +3698,374 @@ function updateHUD(){
   document.getElementById('plasma').textContent = S.plasma||0;
   document.getElementById('cable').textContent = S.cable||0;
   document.getElementById('cred').textContent = S.cred;
+}
+
+// ================================================================
+//  MINI-GAME (정밀 해체)
+// ================================================================
+let mgState = null;
+
+function startGrinderMinigame(){
+  if(!S.grinder || !S.grinder.processing) return;
+  const d = S.grinder.processing;
+  // Only allow for high-value materials
+  if(d.type==='scrap' && Math.random()<0.3){ /* allow low chance */ }
+  const gameType = d.type==='core' ? 'temperature' : (d.type==='ore' ? 'wires' : 'temperature');
+  openMinigame(gameType, d.type);
+}
+
+function openMinigame(type, resType){
+  const el = document.getElementById('miniGame');
+  el.classList.add('show');
+  document.getElementById('grinderBoost').style.display='none';
+  const cv = document.getElementById('mgCanvas');
+  cv.width = 480; cv.height = 220;
+  mgState = { type, resType, cv, ctx: cv.getContext('2d'), t: 0, done:false, success:false };
+  if(type==='temperature') initTempGame();
+  else if(type==='wires') initWireGame();
+  requestAnimationFrame(runMinigame);
+}
+
+function initTempGame(){
+  document.getElementById('mgTitle').textContent = '🔥 레이저 온도 조절';
+  document.getElementById('mgHint').textContent = '마우스로 온도 조절 · 초록 존에 유지';
+  document.getElementById('mgStatus').textContent = '진행 0%';
+  mgState.temp = 40;      // 0-100 current temp
+  mgState.targetY = 50;   // green zone center
+  mgState.zoneH = 20;
+  mgState.progress = 0;
+  mgState.heating = false;
+  mgState.cv.onmousemove = e=>{
+    const rect = mgState.cv.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const ratio = 1 - (y / mgState.cv.height);
+    mgState.temp = Math.max(0, Math.min(100, ratio*100));
+  };
+  mgState.cv.ontouchmove = e=>{
+    e.preventDefault();
+    const t = e.touches[0]; const rect = mgState.cv.getBoundingClientRect();
+    const y = t.clientY - rect.top;
+    const ratio = 1 - (y / mgState.cv.height);
+    mgState.temp = Math.max(0, Math.min(100, ratio*100));
+  };
+}
+
+function initWireGame(){
+  document.getElementById('mgTitle').textContent = '⚡ 와이어 절단';
+  document.getElementById('mgHint').textContent = '표시된 순서대로 와이어를 클릭';
+  document.getElementById('mgStatus').textContent = '순서 암기 중...';
+  // Generate 5 wires with random colors and a random cut order
+  const colors = ['#ff6a8a','#ffd76a','#8fdf8f','#8ff','#c48fff'];
+  mgState.wires = colors.map((c,i)=>({color:c, cut:false, order: i}));
+  // Shuffle cut order
+  const order = [0,1,2,3,4];
+  for(let i=order.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [order[i],order[j]]=[order[j],order[i]]; }
+  mgState.wires.forEach((w,i)=>{ w.order = order.indexOf(i); });
+  mgState.showOrder = true;
+  mgState.currentStep = 0;
+  mgState.wireStartT = performance.now();
+  mgState.cv.onclick = e=>{
+    if(mgState.done) return;
+    if(mgState.showOrder) return;
+    const rect = mgState.cv.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    // Check which wire clicked
+    const W = mgState.cv.width, H = mgState.cv.height;
+    const gap = W/6;
+    for(let i=0;i<5;i++){
+      const wx = gap*(i+1);
+      if(Math.abs(x-wx) < 25 && y > 20 && y < H-20 && !mgState.wires[i].cut){
+        if(mgState.wires[i].order === mgState.currentStep){
+          mgState.wires[i].cut = true;
+          mgState.currentStep++;
+          if(mgState.currentStep >= 5){
+            mgState.done = true; mgState.success = true;
+            document.getElementById('mgStatus').textContent = '✓ 성공! 2x 보상';
+            setTimeout(finishMinigame, 800);
+          }
+        } else {
+          mgState.done = true; mgState.success = false;
+          document.getElementById('mgStatus').textContent = '✕ 잘못된 순서 — 실패';
+          setTimeout(finishMinigame, 800);
+        }
+        break;
+      }
+    }
+  };
+}
+
+function runMinigame(){
+  if(!mgState) return;
+  mgState.t += 1/60;
+  const c = mgState.ctx, cv = mgState.cv;
+  c.fillStyle = '#02040a'; c.fillRect(0,0,cv.width,cv.height);
+  if(mgState.type==='temperature'){
+    // Move target zone slowly (sinusoidal)
+    mgState.targetY = 50 + Math.sin(mgState.t*0.8)*20 + Math.sin(mgState.t*1.3)*10;
+    // Check if temp is in green zone
+    const inZone = Math.abs(mgState.temp - mgState.targetY) < mgState.zoneH/2;
+    if(inZone){ mgState.progress = Math.min(100, mgState.progress + 0.7); }
+    else { mgState.progress = Math.max(0, mgState.progress - 0.3); }
+    document.getElementById('mgStatus').textContent = '진행 '+Math.floor(mgState.progress)+'%';
+    // Draw temperature bar (vertical)
+    const barX = cv.width - 80, barY = 20, barW = 40, barH = cv.height-40;
+    c.fillStyle = '#111'; c.fillRect(barX, barY, barW, barH);
+    // Green zone
+    const zoneY = barY + (1 - (mgState.targetY + mgState.zoneH/2)/100) * barH;
+    const zonePixH = mgState.zoneH/100 * barH;
+    c.fillStyle = 'rgba(140,240,140,.3)';
+    c.fillRect(barX, zoneY, barW, zonePixH);
+    c.strokeStyle = '#8fdf8f'; c.strokeRect(barX, zoneY, barW, zonePixH);
+    // Current temp marker
+    const tempY = barY + (1 - mgState.temp/100) * barH;
+    c.fillStyle = inZone ? '#8fdf8f' : '#ff6a8a';
+    c.fillRect(barX-8, tempY-3, barW+16, 6);
+    // Progress bar (horizontal, left)
+    c.fillStyle = '#111'; c.fillRect(20, cv.height/2-20, cv.width-140, 40);
+    const pg = c.createLinearGradient(0,0,cv.width-140,0);
+    pg.addColorStop(0,'#8ff'); pg.addColorStop(1,'#ffd76a');
+    c.fillStyle = pg;
+    c.fillRect(20, cv.height/2-20, (cv.width-140)*mgState.progress/100, 40);
+    c.fillStyle = '#fff'; c.font='bold 16px sans-serif'; c.textAlign='center';
+    c.fillText('마우스 커서를 위아래로 움직여 온도 조절', cv.width/2-40, cv.height-10);
+    // Complete
+    if(mgState.progress >= 100 && !mgState.done){
+      mgState.done = true; mgState.success = true;
+      document.getElementById('mgStatus').textContent = '✓ 정밀 해체 성공! 2x 보상';
+      setTimeout(finishMinigame, 800);
+    }
+    // Timeout
+    if(mgState.t > 15 && !mgState.done){
+      mgState.done = true; mgState.success = false;
+      document.getElementById('mgStatus').textContent = '⏱ 시간 초과';
+      setTimeout(finishMinigame, 800);
+    }
+  } else if(mgState.type==='wires'){
+    const now = performance.now();
+    const elapsed = (now - mgState.wireStartT)/1000;
+    if(mgState.showOrder && elapsed > 3.5){
+      mgState.showOrder = false;
+      document.getElementById('mgStatus').textContent = '순서대로 클릭! (1→5)';
+    }
+    // Draw wires
+    const W = cv.width, H = cv.height;
+    c.fillStyle='#0f1a2e'; c.fillRect(30, 10, W-60, H-20);
+    c.strokeStyle='#2c3f66'; c.strokeRect(30, 10, W-60, H-20);
+    const gap = W/6;
+    for(let i=0;i<5;i++){
+      const wx = gap*(i+1);
+      const w = mgState.wires[i];
+      c.strokeStyle = w.cut ? '#333' : w.color;
+      c.lineWidth = w.cut ? 2 : 6;
+      c.beginPath(); c.moveTo(wx, 30); c.lineTo(wx, H-30); c.stroke();
+      if(mgState.showOrder){
+        c.fillStyle = '#fff';
+        c.font = 'bold 24px sans-serif'; c.textAlign='center';
+        c.fillText(String(w.order+1), wx, H/2+8);
+      }
+      if(w.cut){
+        c.fillStyle = '#666';
+        c.font = 'bold 20px sans-serif'; c.textAlign='center';
+        c.fillText('✕', wx, H/2+7);
+      }
+    }
+    if(mgState.showOrder){
+      const rem = Math.max(0, 3.5 - elapsed);
+      document.getElementById('mgStatus').textContent = '순서 암기: '+rem.toFixed(1)+'s';
+    }
+    if(!mgState.showOrder && !mgState.done && elapsed > 15){
+      mgState.done = true; mgState.success = false;
+      document.getElementById('mgStatus').textContent = '⏱ 시간 초과';
+      setTimeout(finishMinigame, 800);
+    }
+  }
+  if(!mgState.done) requestAnimationFrame(runMinigame);
+}
+
+function finishMinigame(){
+  if(!mgState) return;
+  const res = mgState.resType;
+  const success = mgState.success;
+  const mult = success ? 2 : 1;
+  if(res==='scrap'){ const g=Math.round(3*mult); S.scrap += g; }
+  else if(res==='core'){ S.core += 1*mult; }
+  else if(res==='ore'){ const g=Math.round(1*mult); S.ore += g; }
+  if(success){
+    trackStat('preciseDismantle', 1);
+    flash('✨ 정밀 해체 성공! '+(mult)+'x');
+  } else {
+    flash('정밀 해체 실패');
+  }
+  closeMinigame();
+  // Continue grinder next item
+  if(S.grinder){
+    S.grinder.processing = S.grinder.queue.shift() || null;
+    S.grinder.processT = 0;
+  }
+}
+
+function cancelMinigame(){
+  // Apply normal reward
+  if(mgState){
+    const res = mgState.resType;
+    if(res==='scrap'){ S.scrap += 3; }
+    else if(res==='core'){ S.core += 1; }
+    else if(res==='ore'){ S.ore += 1; }
+  }
+  closeMinigame();
+  if(S.grinder){
+    S.grinder.processing = S.grinder.queue.shift() || null;
+    S.grinder.processT = 0;
+  }
+}
+
+function closeMinigame(){
+  document.getElementById('miniGame').classList.remove('show');
+  mgState = null;
+}
+
+// Grinder boost button appears when processing rare items
+function updateGrinderBoostBtn(){
+  const btn = document.getElementById('grinderBoost');
+  if(!btn) return;
+  if(!running || !S.grinder || !S.grinder.processing){ btn.style.display='none'; return; }
+  const d = S.grinder.processing;
+  const rare = (d.type==='core' || d.type==='ore');
+  const almostDone = S.grinder.processT >= S.grinder.grindTime*0.5;
+  if(rare && !almostDone && !mgState){
+    // Position near grinder
+    const ang = S.grinder.ang;
+    const gx = Math.cos(ang)*(STATION.r+8);
+    const gy = Math.sin(ang)*(STATION.r+8);
+    const screenX = cv.width/2 + (gx - S.cam.x);
+    const screenY = cv.height/2 + (gy - S.cam.y) + document.getElementById('hud').offsetHeight + 60;
+    btn.style.left = Math.max(10, Math.min(innerWidth-160, screenX-80)) + 'px';
+    btn.style.top = Math.max(50, Math.min(innerHeight-40, screenY)) + 'px';
+    btn.style.display = 'block';
+  } else {
+    btn.style.display='none';
+  }
+}
+
+// ================================================================
+//  EXPEDITIONS
+// ================================================================
+const EXPEDITIONS = [
+  {id:'dark',  name:'어두운 구역', icon:'🌑', c:1, duration:60,  cost:{scrap:10,core:1},          rewards:{scrap:20,cable:3}, desc:'가까운 폐허 지대'},
+  {id:'belt',  name:'소행성 벨트', icon:'☄',  c:2, duration:120, cost:{scrap:20,core:2},          rewards:{scrap:40,ore:3,core:2}, desc:'광물 풍부, 중간 난이도'},
+  {id:'deep',  name:'심우주',      icon:'🌌', c:3, duration:240, cost:{scrap:30,core:3,cable:2},  rewards:{plasma:5,core:4,scrap:60}, desc:'플라즈마 매장지'},
+  {id:'ruins', name:'외계 유적',   icon:'👽', c:4, duration:360, cost:{scrap:50,core:5,ore:2},    rewards:{ore:6,plasma:4,cred:150,artifact:1}, desc:'고대 유물의 조각'},
+];
+
+function openExpeditions(){
+  renderExpeditions();
+  document.getElementById('expPanel').classList.add('show');
+}
+function closeExpeditions(){ document.getElementById('expPanel').classList.remove('show'); }
+
+function renderExpeditions(){
+  if(!S.expeditions) S.expeditions = [];
+  const activeEl = document.getElementById('expActive');
+  activeEl.innerHTML = '';
+  if(S.expeditions.length){
+    const h = document.createElement('h3');
+    h.textContent = '진행 중 ('+S.expeditions.length+'/3)';
+    activeEl.appendChild(h);
+    for(const exp of S.expeditions){
+      const def = EXPEDITIONS.find(e=>e.id===exp.id);
+      const prog = Math.min(1, exp.elapsed / def.duration);
+      const remain = Math.max(0, def.duration - exp.elapsed);
+      const row = document.createElement('div');
+      row.className = 'exp-row';
+      row.innerHTML = `<div class="ei">${def.icon}</div>
+        <div class="en">${def.name}</div>
+        <div class="exp-bar"><div class="fill" style="width:${prog*100}%;"></div></div>
+        <div class="et">${Math.ceil(remain)}s</div>`;
+      activeEl.appendChild(row);
+    }
+  }
+  const availEl = document.getElementById('expAvail');
+  availEl.innerHTML = '';
+  for(const def of EXPEDITIONS){
+    const busy = S.expeditions.some(e=>e.id===def.id) || S.expeditions.length>=3;
+    const card = document.createElement('div');
+    card.className = 'exp-card c'+def.c + (busy?' busy':'');
+    const costStr = Object.entries(def.cost).map(([k,v])=>{
+      const sym = {scrap:'⚙',core:'⚡',ore:'💎',bio:'🧬',plasma:'🧪',cable:'⛓'}[k]||k;
+      return v+sym;
+    }).join(' ');
+    const rewardStr = Object.entries(def.rewards).map(([k,v])=>{
+      const sym = {scrap:'⚙',core:'⚡',ore:'💎',bio:'🧬',plasma:'🧪',cable:'⛓',cred:'💰',artifact:'✨'}[k]||k;
+      return v+sym;
+    }).join(' ');
+    card.innerHTML = `<div class="ei">${def.icon}</div>
+      <div class="en">${def.name}</div>
+      <div class="ed">${def.desc}</div>
+      <div class="eu">⏱ ${def.duration}초</div>
+      <div class="ec">비용: ${costStr}</div>
+      <div class="er">보상: ${rewardStr}</div>`;
+    if(!busy) card.onclick = ()=>launchExpedition(def);
+    availEl.appendChild(card);
+  }
+}
+
+function launchExpedition(def){
+  if((S.expeditions||[]).length >= 3){ flash('최대 3개까지'); return; }
+  if((S.expeditions||[]).some(e=>e.id===def.id)){ flash('이미 진행 중'); return; }
+  // Pay costs
+  const c = def.cost;
+  if((c.scrap||0)>S.scrap||(c.core||0)>S.core||(c.ore||0)>S.ore||(c.bio||0)>S.bio||(c.plasma||0)>S.plasma||(c.cable||0)>S.cable){
+    flash('자원 부족'); return;
+  }
+  S.scrap-=(c.scrap||0); S.core-=(c.core||0); S.ore-=(c.ore||0);
+  S.bio-=(c.bio||0); S.plasma-=(c.plasma||0); S.cable-=(c.cable||0);
+  if(!S.expeditions) S.expeditions = [];
+  S.expeditions.push({id:def.id, elapsed:0});
+  trackStat('expeditionsSent', 1);
+  flash(def.icon+' '+def.name+' 파견 완료');
+  renderExpeditions();
+  updateExpHud();
+}
+
+function tickExpeditions(dt){
+  if(!S.expeditions || !S.expeditions.length) return;
+  for(let i=S.expeditions.length-1;i>=0;i--){
+    const exp = S.expeditions[i];
+    exp.elapsed += dt;
+    const def = EXPEDITIONS.find(e=>e.id===exp.id);
+    if(exp.elapsed >= def.duration){
+      // Award rewards
+      const r = def.rewards;
+      if(r.scrap) S.scrap += r.scrap;
+      if(r.core) S.core += r.core;
+      if(r.ore) S.ore += r.ore;
+      if(r.bio) S.bio += r.bio;
+      if(r.plasma) S.plasma += r.plasma;
+      if(r.cable) S.cable += r.cable;
+      if(r.cred) S.cred += r.cred;
+      if(r.artifact){ S.artifact=true; S.reactorMax+=50; S.reactor+=50; flash('✨ '+def.name+' 완료 - 고대 유물!'); }
+      S.expeditions.splice(i,1);
+      flash(def.icon+' '+def.name+' 귀환! 보상 획득');
+      trackStat('expeditionsCompleted', 1);
+    }
+  }
+  updateExpHud();
+}
+
+function updateExpHud(){
+  const el = document.getElementById('expActiveHud');
+  if(!el) return;
+  el.innerHTML = '';
+  if(!S.expeditions || !S.expeditions.length) return;
+  for(const exp of S.expeditions){
+    const def = EXPEDITIONS.find(e=>e.id===exp.id);
+    const remain = Math.max(0, def.duration - exp.elapsed);
+    const row = document.createElement('div');
+    row.className = 'exp-hud-row';
+    row.textContent = def.icon+' '+def.name+' '+Math.ceil(remain)+'s';
+    el.appendChild(row);
+  }
 }
 
 function updateNetIndicator(){
