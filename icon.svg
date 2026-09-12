@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1a2a4a"/>
+      <stop offset="70%" stop-color="#0a1224"/>
+      <stop offset="100%" stop-color="#050818"/>
+    </radialGradient>
+    <radialGradient id="core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff2a0"/>
+      <stop offset="50%" stop-color="#ffd76a"/>
+      <stop offset="100%" stop-color="#ff9a3a"/>
+    </radialGradient>
+    <radialGradient id="hull" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#4a6aa0"/>
+      <stop offset="60%" stop-color="#2c3f66"/>
+      <stop offset="100%" stop-color="#1b2a44"/>
+    </radialGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#bg)" rx="72"/>
+  <!-- Stars -->
+  <circle cx="80" cy="90" r="2" fill="#cfe" opacity="0.8"/>
+  <circle cx="430" cy="70" r="1.5" fill="#ffd76a" opacity="0.7"/>
+  <circle cx="450" cy="410" r="2" fill="#8ff" opacity="0.6"/>
+  <circle cx="70" cy="440" r="1.5" fill="#cfe" opacity="0.5"/>
+  <circle cx="200" cy="60" r="1" fill="#cfe" opacity="0.5"/>
+  <circle cx="380" cy="150" r="1" fill="#cfe" opacity="0.4"/>
+  <circle cx="120" cy="380" r="1.2" fill="#ffd76a" opacity="0.5"/>
+  <!-- Station outer ring -->
+  <circle cx="256" cy="256" r="190" fill="#0f1a2e" stroke="#4a6aa0" stroke-width="4"/>
+  <!-- Station hull -->
+  <circle cx="256" cy="256" r="170" fill="url(#hull)" stroke="#4a6aa0" stroke-width="3"/>
+  <!-- Inner deck -->
+  <circle cx="256" cy="256" r="140" fill="#0a1524"/>
+  <!-- Spokes -->
+  <g stroke="#2c3f66" stroke-width="5" fill="none">
+    <line x1="256" y1="120" x2="256" y2="180"/>
+    <line x1="256" y1="332" x2="256" y2="392"/>
+    <line x1="120" y1="256" x2="180" y2="256"/>
+    <line x1="332" y1="256" x2="392" y2="256"/>
+    <line x1="160" y1="160" x2="200" y2="200"/>
+    <line x1="352" y1="160" x2="312" y2="200"/>
+    <line x1="160" y1="352" x2="200" y2="312"/>
+    <line x1="352" y1="352" x2="312" y2="312"/>
+  </g>
+  <!-- Deck rings -->
+  <circle cx="256" cy="256" r="110" fill="none" stroke="#2c3f66" stroke-width="1" opacity="0.5"/>
+  <circle cx="256" cy="256" r="80" fill="none" stroke="#2c3f66" stroke-width="1" opacity="0.5"/>
+  <!-- Docking rings -->
+  <circle cx="352" cy="352" r="18" fill="#1a2540" stroke="#4a6aa0" stroke-width="3"/>
+  <circle cx="160" cy="352" r="18" fill="#1a2540" stroke="#4a6aa0" stroke-width="3"/>
+  <circle cx="352" cy="160" r="18" fill="#1a2540" stroke="#4a6aa0" stroke-width="3"/>
+  <circle cx="160" cy="160" r="18" fill="#1a2540" stroke="#4a6aa0" stroke-width="3"/>
+  <circle cx="352" cy="352" r="6" fill="#8ff"/>
+  <circle cx="160" cy="352" r="6" fill="#8ff"/>
+  <circle cx="352" cy="160" r="6" fill="#8ff"/>
+  <circle cx="160" cy="160" r="6" fill="#8ff"/>
+  <!-- Reactor core glow -->
+  <circle cx="256" cy="256" r="60" fill="#ff9a3a" opacity="0.3"/>
+  <circle cx="256" cy="256" r="40" fill="#ffd76a" opacity="0.4"/>
+  <!-- Core -->
+  <circle cx="256" cy="256" r="28" fill="url(#core)"/>
+  <circle cx="256" cy="256" r="12" fill="#fff" opacity="0.9"/>
+  <!-- HP arc -->
+  <path d="M 256 60 A 196 196 0 0 1 452 256" fill="none" stroke="#8fdf8f" stroke-width="6" stroke-linecap="round"/>
+</svg>

@@ -7,6 +7,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#050818">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <title>SALVAGE STATION — 우주 쓰레기 정거장</title>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
@@ -316,6 +320,22 @@
       <button onclick="doGuest()">👤 게스트로 플레이 (진행도 저장 안됨)</button>
     </div>
     <div id="authError"></div>
+    <div id="installBox" style="display:none;margin-top:14px;text-align:center;">
+      <button id="installBtn" onclick="installApp()" style="
+        background:linear-gradient(135deg,#8ff,#4a9);color:#012;border:none;
+        padding:10px 20px;border-radius:8px;cursor:pointer;font-family:inherit;
+        font-weight:800;letter-spacing:3px;font-size:13px;
+        box-shadow:0 6px 20px rgba(140,240,255,.35);">
+        📱 앱으로 설치 (전체화면)
+      </button>
+      <div style="color:#7fa8d8;font-size:10.5px;margin-top:6px;letter-spacing:1px;">
+        홈 화면에 추가되어 주소창 없이 실행됩니다
+      </div>
+    </div>
+    <div id="iosHint" style="display:none;margin-top:14px;text-align:center;color:#7fa8d8;font-size:11px;letter-spacing:1px;line-height:1.6;">
+      📱 <b style="color:#8ff">iOS 설치 방법</b><br>
+      Safari 하단 <b>공유 🡅</b> 버튼 → <b>홈 화면에 추가</b>
+    </div>
   </div>
 </div>
 
@@ -768,6 +788,52 @@
 
 <script>
 'use strict';
+
+// ================================================================
+//  PWA — install & offline (service worker)
+// ================================================================
+let deferredInstallEvent = null;
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    // Only register when served over http(s), not file://
+    if(location.protocol === 'http:' || location.protocol === 'https:'){
+      navigator.serviceWorker.register('sw.js').catch(err=>console.log('[SW] reg failed:', err));
+    }
+  });
+}
+window.addEventListener('beforeinstallprompt', e=>{
+  e.preventDefault();
+  deferredInstallEvent = e;
+  const box = document.getElementById('installBox');
+  if(box) box.style.display='block';
+});
+window.addEventListener('appinstalled', ()=>{
+  deferredInstallEvent = null;
+  const box = document.getElementById('installBox');
+  if(box) box.style.display='none';
+});
+async function installApp(){
+  if(!deferredInstallEvent){
+    alert('설치 프롬프트가 준비되지 않았습니다.\n\nChrome/Edge: 주소창 오른쪽 설치 아이콘을 눌러주세요.\niOS Safari: 공유 → 홈 화면에 추가');
+    return;
+  }
+  deferredInstallEvent.prompt();
+  const choice = await deferredInstallEvent.userChoice;
+  if(choice.outcome === 'accepted'){
+    deferredInstallEvent = null;
+    const box = document.getElementById('installBox');
+    if(box) box.style.display='none';
+  }
+}
+// iOS 설치 안내 (beforeinstallprompt를 지원 안 함)
+window.addEventListener('DOMContentLoaded', ()=>{
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  if(isIOS && !isStandalone){
+    const hint = document.getElementById('iosHint');
+    if(hint) hint.style.display = 'block';
+  }
+});
 
 // ================================================================
 //  AUTH (localStorage + SHA-256)

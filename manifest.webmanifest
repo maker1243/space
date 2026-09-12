@@ -1,0 +1,35 @@
+{
+  "name": "SALVAGE STATION",
+  "short_name": "SALVAGE",
+  "description": "우주 쓰레기 정거장 - 협동 생존·경영 디펜스 게임",
+  "id": "salvage-station-app",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#050818",
+  "theme_color": "#050818",
+  "categories": ["games", "entertainment"],
+  "lang": "ko",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
