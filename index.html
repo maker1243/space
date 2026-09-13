@@ -2116,41 +2116,13 @@ function collideInteriorWalls(p){
       }
     }
   }
-  // Outer hull (rectangular clamp) — leave airlock gap on top
+  // Outer hull — FULLY SEALED for unsuited players
+  // Airlock only allows passage via E-hold suit-up ritual, not by walking through
   const halfW = STATION.w/2 - 6, halfH = STATION.h/2 - 6;
-  // Airlock gap at top-center
-  const nearAirlockGap = Math.abs(p.x) < 28 && p.y < -halfH + 20;
-  if(!nearAirlockGap){
-    if(p.x >  halfW){ p.x =  halfW; p.vx *= 0.2; }
-    if(p.x < -halfW){ p.x = -halfW; p.vx *= 0.2; }
-    if(p.y >  halfH){ p.y =  halfH; p.vy *= 0.2; }
-    if(p.y < -halfH){ p.y = -halfH; p.vy *= 0.2; }
-  }
-}
-
-// Collide player with interior walls (only when unsuited/inside)
-function collideInteriorWalls(p){
-  if(!S.interiorWalls || p.suit) return;
-  const pr = 10; // player radius
-  for(const w of S.interiorWalls){
-    const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
-    const L2 = dx*dx + dy*dy;
-    if(L2 < 0.01) continue;
-    let t = ((p.x-w.x1)*dx + (p.y-w.y1)*dy) / L2;
-    t = Math.max(0, Math.min(1, t));
-    const cx = w.x1 + t*dx, cy = w.y1 + t*dy;
-    const nx = p.x - cx, ny = p.y - cy;
-    const dist = Math.hypot(nx, ny);
-    if(dist < pr && dist > 0.01){
-      p.x = cx + nx/dist * pr;
-      p.y = cy + ny/dist * pr;
-      const dot = (p.vx*nx + p.vy*ny) / dist;
-      if(dot < 0){
-        p.vx -= dot * nx/dist;
-        p.vy -= dot * ny/dist;
-      }
-    }
-  }
+  if(p.x >  halfW){ p.x =  halfW; p.vx *= 0.2; }
+  if(p.x < -halfW){ p.x = -halfW; p.vx *= 0.2; }
+  if(p.y >  halfH){ p.y =  halfH; p.vy *= 0.2; }
+  if(p.y < -halfH){ p.y = -halfH; p.vy *= 0.2; }
 }
 
 function upgradeAllStructures(factor){
@@ -3298,7 +3270,16 @@ function updateHost(dt){
         if(meP.suitT >= 2){
           meP.suit = !meP.suit;
           meP.suitT = 0; meP.suiting = false;
-          flash(meP.suit ? '🧑‍🚀 우주복 착용 완료' : '👕 우주복 해제');
+          // Teleport through the airlock to the other side (avoids clipping)
+          if(meP.suit){
+            meP.y = S.airlock.y - 34;   // just outside station
+            meP.vx = meP.vy = 0;
+            flash('🧑‍🚀 우주복 착용 완료 - 외부로 이동');
+          } else {
+            meP.y = S.airlock.y + 34;   // just inside station
+            meP.vx = meP.vy = 0;
+            flash('👕 우주복 해제 - 내부로 이동');
+          }
         }
       } else {
         meP.suiting = false; meP.suitT = 0;
