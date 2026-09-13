@@ -581,6 +581,7 @@
     <div class="phase-bar"><div class="fill" id="phaseFill"></div></div>
     <span class="tag">🛡 <b id="hull">100</b>/<b id="hullMax">100</b></span>
     <span class="tag">💨 <b id="oxy">100</b>%</span>
+    <span class="tag" style="border-color:#8fdf80;" title="오염도">☣ <b id="pollution">0</b></span>
     <span class="tag" style="border-color:#c04040;">🔥 리액터 <b id="reactor">100</b>%</span>
     <span class="tag">⚙ <b id="scrap">0</b></span>
     <span class="tag">⚡ <b id="core">0</b></span>
@@ -1936,6 +1937,43 @@ const MODULES = {
   mod_thrust:   {icon:'🚀', name:'추진기',     color:'#ffd76a', hp:80,  cost:[40,3,0,0,0,2], apply:s=>{ s.hasThruster=true; }},
 };
 
+// Structure tier scaling — grows with station deck level
+function currentTier(){ return 1 + (S.deckCount||0) * 0.15; }
+
+function upgradeAllStructures(factor){
+  factor = factor || 1.15;
+  for(const t of (S.turrets||[])){
+    t.tier = (t.tier||1) * factor;
+    t.range = (t.range||320) * factor;
+    t.dmg = (t.dmg||10) * factor;
+    t.hpMax = (t.hpMax||60) * factor;
+    t.hp = Math.min(t.hpMax, (t.hp||t.hpMax) * factor);
+    t.fireRate = Math.max(6, (t.fireRate||28) * 0.95);  // slightly faster
+  }
+  for(const w of (S.walls||[])){
+    w.tier = (w.tier||1) * factor;
+    w.hpMax = w.hpMax * factor;
+    w.hp = Math.min(w.hpMax, w.hp * factor);
+  }
+  for(const tor of (S.torches||[])){
+    tor.tier = (tor.tier||1) * factor;
+    tor.r = tor.r * 1.10;  // radius grows nicely
+  }
+  for(const m of (S.mines||[])){
+    m.tier = (m.tier||1) * factor;
+    m.r = m.r * 1.08;
+    m.dmg = (m.dmg||70) * factor;
+  }
+  for(const m of (S.modules||[])){
+    m.tier = (m.tier||1) * factor;
+    if(m.hpMax){
+      m.hpMax = m.hpMax * factor;
+      m.hp = Math.min(m.hpMax, m.hp * factor);
+    }
+  }
+  flash('🔧 모든 건축물 강화 (+15%)');
+}
+
 function allocateModuleSlot(){
   // Find angular slot not too close to other modules
   const used = (S.modules||[]).map(m=>m.ang);
@@ -1969,6 +2007,7 @@ function buildModule(type){
     S.hullMax += 25;
     S.hull += 25;
     repositionModules();
+    upgradeAllStructures(1.15);
     flash('🟦 격벽 확장 Lv.'+S.deckCount+' (반경 '+STATION.r+')');
     trackStat('modulesBuilt', 1);
     trackStat('decksBuilt', 1);
@@ -2018,6 +2057,18 @@ function initGameHost(){
   S.expeditions = [];
   S.whales=[]; S.traders=[]; S.derelicts=[];
   S.spawnT = 0;
+  // Airlock at top of station
+  S.airlock = { ang: -Math.PI/2, r: 34 };
+  // Interior mission terminals
+  S.terminals = [
+    {ang:-Math.PI*0.75, dist:70, type:'reactor', label:'🔥 리액터', color:'#ff9a3a', cd:0, holdT:0, holdReq:3, cdMax:30},
+    {ang: Math.PI*0.75, dist:70, type:'medbay',  label:'💊 의무실', color:'#ff8fd0', cd:0, holdT:0, holdReq:3, cdMax:45},
+    {ang: Math.PI*0.25, dist:95, type:'comms',   label:'📡 통신',    color:'#8ff',    cd:0, holdT:0, holdReq:3, cdMax:60},
+    {ang:-Math.PI*0.25, dist:95, type:'sensor',  label:'🛰 센서',    color:'#8fdf8f', cd:0, holdT:0, holdReq:3, cdMax:45},
+  ];
+  // Pollution level (0-100)
+  S.pollution = 0;
+  S.polluted_debris_count = 0;
   STATION.r = STATION.baseR; // reset expansion
   // Grinder (제련기) — at bottom of station
   S.grinder = { ang: Math.PI/2, queue: [], processing: null, processT: 0, grindTime: 1.5, chuteR: 46 };
@@ -2077,11 +2128,14 @@ function makePlayer(lp, isMe){
     ai: !!lp.ai && !lp.peerId, hp:100, hpMax:100,
     thruster:0, input:null, remote:false,
     grenades:0, stimT:0,
+    suit:false, suitT:0, suiting:false,   // 우주복 상태
     peerId: lp.peerId,
   };
   applyRoleBuffs(t);
   if(t.fireRateMul) t.fireRate = Math.max(4, Math.round(t.fireRate * t.fireRateMul));
   if(lp.peerId) t.remote = true;
+  // AI teammates always start suited (they know how)
+  if(t.ai) t.suit = true;
   return t;
 }
 
@@ -2260,24 +2314,37 @@ function doPlace(p, id, wx, wy){
   if(!p) return;
   const d = p.buildDisc||1;
   const dd = Math.hypot(wx,wy);
+  const tier = currentTier();
   if(id==='turret'){
     if(dd < STATION.r+90 && dd > STATION.r-20){
-      if(pay(30*d,2,0,0,0,1)){ S.turrets.push({x:wx,y:wy,ang:Math.atan2(wy,wx),cool:0,range:320,fireRate:28,dmg:10,hp:60,color:p.color}); trackStat('turretsBuilt',1); }
+      if(pay(30*d,2,0,0,0,1)){
+        S.turrets.push({x:wx,y:wy,ang:Math.atan2(wy,wx),cool:0,
+          range:320*tier, fireRate:28, dmg:10*tier, hp:60*tier, hpMax:60*tier,
+          tier, color:p.color});
+        trackStat('turretsBuilt',1);
+      }
     } else flash('선체 부근에만 설치');
   } else if(id==='mine'){
     if(dd > STATION.r+40 && dd < WORLD_R-100){
-      if(pay(20*d,1,0)){ S.mines.push({x:wx,y:wy,r:70,explMul:p.explMul||1}); trackStat('minesBuilt',1); }
+      if(pay(20*d,1,0)){
+        S.mines.push({x:wx,y:wy,r:70*tier, dmg:70*tier, tier, explMul:p.explMul||1});
+        trackStat('minesBuilt',1);
+      }
     } else flash('외곽 공간에 배치');
   } else if(id==='torch'){
     if(dd < STATION.r+120 && dd > STATION.r-10){
-      if(pay(15*d,1,0)){ S.torches.push({x:wx,y:wy,r:180,flick:Math.random()*Math.PI*2}); trackStat('torchesBuilt',1); }
+      if(pay(15*d,1,0)){
+        S.torches.push({x:wx,y:wy,r:180*tier, tier, flick:Math.random()*Math.PI*2});
+        trackStat('torchesBuilt',1);
+      }
     } else flash('선체 근처에만 설치');
   } else if(id==='wall'){
     if(dd < STATION.r+80 && dd > STATION.r-20){
       if(pay(10*d,0,0,0,0,1)){
         const ang = Math.atan2(wy,wx);
         const wm = p.wallHpMul||1;
-        S.walls.push({x:wx,y:wy,ang,hp:80*wm,hpMax:80*wm});
+        const hp = 80*wm*tier;
+        S.walls.push({x:wx,y:wy,ang,hp, hpMax:hp, tier});
         trackStat('wallsBuilt', 1);
       }
     } else flash('선체 부근에만 설치');
@@ -2316,8 +2383,10 @@ function spawnDebris(){
   if(roll<0.55) type='scrap';
   else if(roll<0.85){ type='core'; size=8+Math.random()*4; }
   else { type='ore'; size=12+Math.random()*6; }
+  const contaminated = Math.random() < 0.15;  // 15% 오염 확률
   S.debris.push({x,y, vx:dx/L*sp, vy:dy/L*sp, r:size, type,
-    ang: Math.random()*Math.PI*2, va:(Math.random()-0.5)*0.03, hp: type==='ore'?3:1});
+    ang: Math.random()*Math.PI*2, va:(Math.random()-0.5)*0.03, hp: type==='ore'?3:1,
+    contaminated});
 }
 function spawnEnemy(kind){
   const ang = Math.random()*Math.PI*2;
@@ -2496,12 +2565,16 @@ function updateHost(dt){
       d.vy += fy/L * 0.06;
     }
     if(distToGrinder < chuteR && S.grinder){
-      // Enter grinder
+      // Enter grinder — contaminated debris raises pollution
+      if(d.contaminated){
+        S.pollution = Math.min(100, S.pollution + 8);
+        flash('☣ 오염 쓰레기 유입! 오염도 +8');
+      }
       if(S.grinder.processing===null){
-        S.grinder.processing = {type:d.type, r:d.r};
+        S.grinder.processing = {type:d.type, r:d.r, contaminated:d.contaminated};
         S.grinder.processT = 0;
       } else if(S.grinder.queue.length < 8){
-        S.grinder.queue.push({type:d.type, r:d.r});
+        S.grinder.queue.push({type:d.type, r:d.r, contaminated:d.contaminated});
       } else {
         // queue full — bounce back
         const fx = d.x-gx, fy = d.y-gy;
@@ -2752,7 +2825,8 @@ function updateHost(dt){
           explode(mn.x,mn.y,'#ffb040',60);
           for(let j=S.enemies.length-1;j>=0;j--){
             const en = S.enemies[j];
-            if(Math.hypot(en.x-mn.x,en.y-mn.y) < 140){ en.hp -= 70; if(en.hp<=0) killEnemy(j); }
+            const mineDmg = (mn.dmg||70);
+            if(Math.hypot(en.x-mn.x,en.y-mn.y) < 140*(mn.tier||1)){ en.hp -= mineDmg; if(en.hp<=0) killEnemy(j); }
           }
           S.mines.splice(m,1);
         }
@@ -2852,7 +2926,7 @@ function updateHost(dt){
   }
 
   for(const br of S.breaches){
-    S.oxy -= dt*1.2;
+    S.oxy -= dt*0.5;   // patched: 1.2 → 0.5 (60% 감소)
     if(Math.random()<0.4){
       const px=Math.cos(br.a)*STATION.r*0.95, py=Math.sin(br.a)*STATION.r*0.95;
       S.particles.push({x:px,y:py,vx:Math.cos(br.a)*2,vy:Math.sin(br.a)*2,life:.7,c:'#9ff'});
@@ -2982,22 +3056,80 @@ function updateHost(dt){
     }
   }
 
-  // === Trader interaction: E key or tap ===
-  if(!S._tradeCoolDown) S._tradeCoolDown = 0;
-  if(S._tradeCoolDown > 0) S._tradeCoolDown -= dt;
-  if((keys['e'] || touch.tradeTriggered) && S._tradeCoolDown<=0){
-    const me = myPlayer();
-    if(me){
+  // === Context-sensitive E interactions ===
+  if(!S._interactCd) S._interactCd = 0;
+  if(S._interactCd > 0) S._interactCd -= dt;
+  const eDown = keys['e'] || touch.tradeTriggered;
+
+  const meP = myPlayer();
+  if(meP){
+    // Trader (priority 1)
+    let interacted = false;
+    if(eDown && S._interactCd<=0){
       for(const tr of S.traders){
-        if(Math.hypot(me.x-tr.x, me.y-tr.y) < 70){
-          openTradePanel(tr);
-          S._tradeCoolDown = 0.3;
-          touch.tradeTriggered = false;
-          break;
+        if(Math.hypot(meP.x-tr.x, meP.y-tr.y) < 70){
+          openTradePanel(tr); S._interactCd = 0.3; touch.tradeTriggered = false;
+          interacted = true; break;
+        }
+      }
+    }
+    // Airlock — press+hold E for 2s to toggle suit
+    if(!interacted){
+      const ax = Math.cos(S.airlock.ang)*STATION.r;
+      const ay = Math.sin(S.airlock.ang)*STATION.r;
+      const nearAirlock = Math.hypot(meP.x-ax, meP.y-ay) < 40;
+      if(nearAirlock && eDown){
+        if(!meP.suiting){ meP.suiting = true; meP.suitT = 0; }
+        meP.suitT += dt;
+        if(meP.suitT >= 2){
+          meP.suit = !meP.suit;
+          meP.suitT = 0; meP.suiting = false;
+          flash(meP.suit ? '🧑‍🚀 우주복 착용 완료' : '👕 우주복 해제');
+        }
+      } else {
+        meP.suiting = false; meP.suitT = 0;
+      }
+    }
+    // Interior terminals (need to be inside station AND not suited)
+    if(!interacted && !meP.suit){
+      for(const term of S.terminals){
+        const tx = Math.cos(term.ang) * term.dist;
+        const ty = Math.sin(term.ang) * term.dist;
+        const near = Math.hypot(meP.x-tx, meP.y-ty) < 25;
+        if(near && eDown){
+          if(term.cd > 0){ term.holdT = 0; continue; }
+          term.holdT += dt;
+          if(term.holdT >= term.holdReq){
+            activateTerminal(term);
+            term.holdT = 0;
+            term.cd = term.cdMax;
+          }
+        } else if(!near){
+          term.holdT = Math.max(0, term.holdT - dt*2);
         }
       }
     }
   }
+  // Terminal cooldowns tick
+  for(const term of S.terminals){ if(term.cd>0) term.cd -= dt; }
+  if(S._radarBoost > 0) S._radarBoost -= dt;
+
+  // === Movement restriction — no suit = can't leave station ===
+  for(const t of S.team){
+    if(!t.suit){
+      const d = Math.hypot(t.x, t.y);
+      if(d > STATION.r - 6){
+        t.x = t.x/d * (STATION.r - 6);
+        t.y = t.y/d * (STATION.r - 6);
+        t.vx *= 0.2; t.vy *= 0.2;
+      }
+    }
+  }
+
+  // === Pollution effects ===
+  if(S.pollution > 50 && Math.random() < 0.01) S.reactor = Math.max(0, S.reactor - 0.5);
+  if(S.pollution > 80 && Math.random() < 0.005) damageStation(1);
+  if(S.hasMedbay) S.pollution = Math.max(0, S.pollution - dt*0.3); // medbay reduces
 
   // Expeditions & minigame button
   tickExpeditions(dt);
@@ -3276,7 +3408,7 @@ function damageStation(a){
   if(S.phase==='night') S.nightTookDmg = true;
   if(a>=8 && Math.random()<0.35) openBreach(Math.random()*Math.PI*2);
 }
-function openBreach(a){ if(S.breaches.length<8) S.breaches.push({a, hp:20}); }
+function openBreach(a){ if(S.breaches.length<8) S.breaches.push({a, hp:35}); }  // patched: 20 → 35 HP
 function repairNear(p){
   if(!p) return;
   const pd = Math.hypot(p.x,p.y);
@@ -3540,8 +3672,10 @@ function render(){
   ctx.setLineDash([]);
 
   drawStation();
+  drawInterior();
   drawModules();
   drawGrinder();
+  drawAirlock();
   // Torches (bonfire-like)
   if(S.torches) for(const tor of S.torches){
     const fl = 0.7 + Math.sin(tor.flick||0)*0.3;
@@ -3750,6 +3884,115 @@ function drawStation(){
   ctx.lineWidth=1;
 }
 
+function drawInterior(){
+  // Draw terminals inside station (only when there's terminals in state)
+  if(!S.terminals || !S.terminals.length) return;
+  const me = myPlayer();
+  const t = performance.now()*0.001;
+  for(const term of S.terminals){
+    const tx = Math.cos(term.ang) * term.dist;
+    const ty = Math.sin(term.ang) * term.dist;
+    // Base panel
+    ctx.save();
+    ctx.translate(tx, ty);
+    ctx.rotate(term.ang + Math.PI/2);
+    // Housing
+    ctx.fillStyle = shade(term.color, -0.5);
+    ctx.strokeStyle = term.color;
+    ctx.lineWidth = 2;
+    roundRect(ctx, -12, -10, 24, 20, 3);
+    ctx.fill(); ctx.stroke();
+    // Screen with icon
+    ctx.fillStyle = shade(term.color, -0.3);
+    ctx.fillRect(-9, -7, 18, 14);
+    // Icon
+    ctx.font = 'bold 12px "Segoe UI Emoji", sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillStyle = term.color;
+    ctx.fillText(term.label.split(' ')[0], 0, 0);
+    // Cooldown indicator
+    if(term.cd > 0){
+      ctx.fillStyle = 'rgba(0,0,0,.7)';
+      const frac = term.cd/term.cdMax;
+      ctx.fillRect(-9, -7, 18, 14*frac);
+    }
+    ctx.restore();
+    // Interaction hint & progress
+    if(me && !me.suit && Math.hypot(me.x-tx, me.y-ty) < 25){
+      ctx.fillStyle = term.color;
+      ctx.font = 'bold 10px "Segoe UI"';
+      ctx.textAlign='center';
+      ctx.fillText(term.label + (term.cd>0 ? ' ('+Math.ceil(term.cd)+'s)' : ' [E 홀드]'), tx, ty-20);
+      if(term.holdT > 0){
+        ctx.fillStyle = 'rgba(0,0,0,.6)';
+        ctx.fillRect(tx-16, ty+18, 32, 4);
+        ctx.fillStyle = term.color;
+        ctx.fillRect(tx-16, ty+18, 32*(term.holdT/term.holdReq), 4);
+      }
+    }
+  }
+}
+
+function drawAirlock(){
+  if(!S.airlock) return;
+  const a = S.airlock.ang;
+  const ax = Math.cos(a) * STATION.r;
+  const ay = Math.sin(a) * STATION.r;
+  ctx.save();
+  ctx.translate(ax, ay);
+  ctx.rotate(a + Math.PI/2);
+  // Airlock housing
+  ctx.fillStyle = '#4a3a6a';
+  ctx.strokeStyle = '#c48fff';
+  ctx.lineWidth = 3;
+  roundRect(ctx, -18, -14, 36, 22, 4);
+  ctx.fill(); ctx.stroke();
+  // Door
+  ctx.fillStyle = '#0a0a0a';
+  ctx.fillRect(-14, -12, 28, 16);
+  // Warning stripes
+  ctx.fillStyle = '#ffd76a';
+  ctx.fillRect(-14, 6, 28, 2);
+  ctx.fillStyle = '#000';
+  for(let i=-14;i<14;i+=4){
+    ctx.fillRect(i, 6, 2, 2);
+  }
+  // Airlock symbol
+  const pulse = 0.6+Math.sin(performance.now()*0.003)*0.4;
+  ctx.fillStyle = 'rgba(196,143,255,'+pulse+')';
+  ctx.beginPath();
+  ctx.arc(0, -4, 5, 0, Math.PI*2); ctx.fill();
+  ctx.font = 'bold 8px "Segoe UI Emoji"';
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('🚪', 0, -4);
+  ctx.restore();
+  // Label & interaction hint
+  const me = myPlayer();
+  ctx.font = 'bold 10px "Segoe UI"';
+  ctx.textAlign='center';
+  ctx.fillStyle = '#c48fff';
+  ctx.fillText('🚪 에어록', ax + Math.cos(a)*24, ay + Math.sin(a)*24);
+  if(me){
+    const near = Math.hypot(me.x-ax, me.y-ay) < 40;
+    if(near){
+      ctx.fillStyle = '#ffd76a';
+      ctx.font = 'bold 11px "Segoe UI"';
+      const msg = me.suit ? '[E 홀드] 우주복 해제' : '[E 홀드] 우주복 착용';
+      ctx.fillText(msg, ax + Math.cos(a)*36, ay + Math.sin(a)*36);
+      // Progress bar
+      if(me.suiting && me.suitT>0){
+        const bx = ax + Math.cos(a)*44 - 20;
+        const by = ay + Math.sin(a)*44;
+        ctx.fillStyle = 'rgba(0,0,0,.7)';
+        ctx.fillRect(bx, by, 40, 5);
+        ctx.fillStyle = '#c48fff';
+        ctx.fillRect(bx, by, 40*(me.suitT/2), 5);
+      }
+    }
+  }
+}
+
 function drawGrinder(){
   if(!S.grinder) return;
   const ang = S.grinder.ang;
@@ -3931,6 +4174,12 @@ function drawTurret(t){
 }
 
 function drawDebris(d){
+  // Contamination glow
+  if(d.contaminated){
+    const pulse = 0.4+Math.sin(performance.now()*0.008)*0.4;
+    ctx.fillStyle = 'rgba(140,255,80,'+(pulse*0.4)+')';
+    ctx.beginPath(); ctx.arc(d.x, d.y, d.r*1.8, 0, Math.PI*2); ctx.fill();
+  }
   ctx.save(); ctx.translate(d.x,d.y); ctx.rotate(d.ang||0);
   if(d.type==='scrap'){
     // Chunky metal box with rivets
@@ -4430,9 +4679,10 @@ function drawMinimap(){
   }
   ctx.fillStyle='#fff';
   ctx.font='9px Consolas'; ctx.textAlign='left';
-  ctx.fillText('MAP'+(S.hasRadar?' 🛰':''), x+6, y+12);
+  const hasRadar = S.hasRadar || (S._radarBoost||0) > 0;
+  ctx.fillText('MAP'+(hasRadar?' 🛰':''), x+6, y+12);
   // Radar sweep effect
-  if(S.hasRadar){
+  if(hasRadar){
     const sweep = (performance.now()*0.001)%(Math.PI*2);
     ctx.strokeStyle='rgba(140,240,255,.4)';
     ctx.beginPath(); ctx.moveTo(cx,cy);
@@ -4455,6 +4705,7 @@ function updateHUD(){
   document.getElementById('hullMax').textContent = S.hullMax;
   document.getElementById('oxy').textContent = Math.floor(S.oxy);
   document.getElementById('reactor').textContent = Math.floor(S.reactor||0);
+  document.getElementById('pollution').textContent = Math.floor(S.pollution||0);
   document.getElementById('scrap').textContent = S.scrap;
   document.getElementById('core').textContent = S.core;
   document.getElementById('ore').textContent = S.ore;
@@ -4893,6 +5144,31 @@ addEventListener('keydown', e=>{
     // handled in update loop via keys['e']
   }
 });
+
+// ================================================================
+//  INTERIOR TERMINAL ACTIONS
+// ================================================================
+function activateTerminal(term){
+  if(term.type==='reactor'){
+    S.reactor = Math.min(S.reactorMax||100, S.reactor + 15);
+    flash('🔥 리액터 +15%');
+  } else if(term.type==='medbay'){
+    for(const t of S.team){ t.hp = Math.min(t.hpMax, t.hp + 30); }
+    S.pollution = Math.max(0, S.pollution - 20);
+    flash('💊 팀 HP +30, 오염 -20');
+  } else if(term.type==='comms'){
+    for(const exp of (S.expeditions||[])){
+      const def = EXPEDITIONS.find(e=>e.id===exp.id);
+      if(def) exp.elapsed = Math.min(def.duration, exp.elapsed + def.duration*0.2);
+    }
+    S.cred += 20;
+    flash('📡 원정 20% 가속, +20💰');
+  } else if(term.type==='sensor'){
+    S._radarBoost = 30; // 30초 임시 레이더
+    flash('🛰 임시 레이더 30초');
+  }
+  trackStat('terminalsUsed', 1);
+}
 
 function updateNetIndicator(){
   const el = document.getElementById('netStat');
