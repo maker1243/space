@@ -1940,6 +1940,45 @@ const MODULES = {
 // Structure tier scaling — grows with station deck level
 function currentTier(){ return 1 + (S.deckCount||0) * 0.15; }
 
+// ===== Interior walls (dividing station into 4 rooms + central hub) =====
+function makeInteriorWalls(){
+  S.interiorWalls = [];
+  const rIn = 45, rOut = STATION.r - 15;
+  const angles = [Math.PI/4, Math.PI*3/4, -Math.PI/4, -Math.PI*3/4];
+  for(const a of angles){
+    S.interiorWalls.push({
+      x1: Math.cos(a)*rIn,  y1: Math.sin(a)*rIn,
+      x2: Math.cos(a)*rOut, y2: Math.sin(a)*rOut,
+      a,
+    });
+  }
+}
+
+// Collide player with interior walls (only when unsuited/inside)
+function collideInteriorWalls(p){
+  if(!S.interiorWalls || p.suit) return;
+  const pr = 10; // player radius
+  for(const w of S.interiorWalls){
+    const dx = w.x2 - w.x1, dy = w.y2 - w.y1;
+    const L2 = dx*dx + dy*dy;
+    if(L2 < 0.01) continue;
+    let t = ((p.x-w.x1)*dx + (p.y-w.y1)*dy) / L2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = w.x1 + t*dx, cy = w.y1 + t*dy;
+    const nx = p.x - cx, ny = p.y - cy;
+    const dist = Math.hypot(nx, ny);
+    if(dist < pr && dist > 0.01){
+      p.x = cx + nx/dist * pr;
+      p.y = cy + ny/dist * pr;
+      const dot = (p.vx*nx + p.vy*ny) / dist;
+      if(dot < 0){
+        p.vx -= dot * nx/dist;
+        p.vy -= dot * ny/dist;
+      }
+    }
+  }
+}
+
 function upgradeAllStructures(factor){
   factor = factor || 1.15;
   for(const t of (S.turrets||[])){
@@ -2007,6 +2046,7 @@ function buildModule(type){
     S.hullMax += 25;
     S.hull += 25;
     repositionModules();
+    makeInteriorWalls();
     upgradeAllStructures(1.15);
     flash('🟦 격벽 확장 Lv.'+S.deckCount+' (반경 '+STATION.r+')');
     trackStat('modulesBuilt', 1);
@@ -2057,15 +2097,23 @@ function initGameHost(){
   S.expeditions = [];
   S.whales=[]; S.traders=[]; S.derelicts=[];
   S.spawnT = 0;
-  // Airlock at top of station
+  // Airlock at top of station (north)
   S.airlock = { ang: -Math.PI/2, r: 34 };
-  // Interior mission terminals
+  // Interior mission terminals — one per room
   S.terminals = [
-    {ang:-Math.PI*0.75, dist:70, type:'reactor', label:'🔥 리액터', color:'#ff9a3a', cd:0, holdT:0, holdReq:3, cdMax:30},
-    {ang: Math.PI*0.75, dist:70, type:'medbay',  label:'💊 의무실', color:'#ff8fd0', cd:0, holdT:0, holdReq:3, cdMax:45},
-    {ang: Math.PI*0.25, dist:95, type:'comms',   label:'📡 통신',    color:'#8ff',    cd:0, holdT:0, holdReq:3, cdMax:60},
-    {ang:-Math.PI*0.25, dist:95, type:'sensor',  label:'🛰 센서',    color:'#8fdf8f', cd:0, holdT:0, holdReq:3, cdMax:45},
+    {ang: Math.PI/2,  distR:0.55, type:'reactor', label:'🔥 리액터', color:'#ff9a3a', cd:0, holdT:0, holdReq:3, cdMax:30},
+    {ang: 0,          distR:0.55, type:'medbay',  label:'💊 의무실', color:'#ff8fd0', cd:0, holdT:0, holdReq:3, cdMax:45},
+    {ang: Math.PI,    distR:0.55, type:'comms',   label:'📡 통신',   color:'#8ff',    cd:0, holdT:0, holdReq:3, cdMax:60},
+    {ang:-Math.PI/2,  distR:0.35, type:'sensor',  label:'🛰 센서',   color:'#8fdf8f', cd:0, holdT:0, holdReq:3, cdMax:45},
   ];
+  // Rooms — 4 walls dividing station into 4 sections + central hub
+  S.rooms = [
+    {ang: Math.PI/2,  label:'🔥 REACTOR', color:'#ff9a3a'},
+    {ang: 0,          label:'💊 MEDBAY',  color:'#ff8fd0'},
+    {ang: Math.PI,    label:'📡 COMMS',   color:'#8ff'},
+    {ang:-Math.PI/2,  label:'🚪 AIRLOCK', color:'#c48fff'},
+  ];
+  makeInteriorWalls();
   // Pollution level (0-100)
   S.pollution = 0;
   S.polluted_debris_count = 0;
@@ -3093,8 +3141,9 @@ function updateHost(dt){
     // Interior terminals (need to be inside station AND not suited)
     if(!interacted && !meP.suit){
       for(const term of S.terminals){
-        const tx = Math.cos(term.ang) * term.dist;
-        const ty = Math.sin(term.ang) * term.dist;
+        const dist = term.dist !== undefined ? term.dist : (term.distR||0.55) * STATION.r;
+        const tx = Math.cos(term.ang) * dist;
+        const ty = Math.sin(term.ang) * dist;
         const near = Math.hypot(meP.x-tx, meP.y-ty) < 25;
         if(near && eDown){
           if(term.cd > 0){ term.holdT = 0; continue; }
@@ -3114,7 +3163,7 @@ function updateHost(dt){
   for(const term of S.terminals){ if(term.cd>0) term.cd -= dt; }
   if(S._radarBoost > 0) S._radarBoost -= dt;
 
-  // === Movement restriction — no suit = can't leave station ===
+  // === Movement restriction — no suit = can't leave station, walls block ===
   for(const t of S.team){
     if(!t.suit){
       const d = Math.hypot(t.x, t.y);
@@ -3123,6 +3172,7 @@ function updateHost(dt){
         t.y = t.y/d * (STATION.r - 6);
         t.vx *= 0.2; t.vy *= 0.2;
       }
+      collideInteriorWalls(t);
     }
   }
 
@@ -3885,13 +3935,75 @@ function drawStation(){
 }
 
 function drawInterior(){
-  // Draw terminals inside station (only when there's terminals in state)
   if(!S.terminals || !S.terminals.length) return;
   const me = myPlayer();
   const t = performance.now()*0.001;
+
+  // === Floor tiles (subtle grid to hint interior) ===
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, STATION.r-8, 0, Math.PI*2);
+  ctx.clip();
+  ctx.strokeStyle = 'rgba(100,140,200,.05)';
+  ctx.lineWidth = 1;
+  const cellSize = 20;
+  for(let x=-STATION.r;x<STATION.r;x+=cellSize){
+    ctx.beginPath(); ctx.moveTo(x,-STATION.r); ctx.lineTo(x,STATION.r); ctx.stroke();
+  }
+  for(let y=-STATION.r;y<STATION.r;y+=cellSize){
+    ctx.beginPath(); ctx.moveTo(-STATION.r,y); ctx.lineTo(STATION.r,y); ctx.stroke();
+  }
+  ctx.restore();
+
+  // === Room labels (faint text at each room center) ===
+  if(S.rooms){
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    for(const room of S.rooms){
+      const rx = Math.cos(room.ang) * STATION.r * 0.75;
+      const ry = Math.sin(room.ang) * STATION.r * 0.75;
+      ctx.fillStyle = room.color;
+      ctx.globalAlpha = 0.15;
+      ctx.font = 'bold 13px "Segoe UI"';
+      ctx.fillText(room.label, rx, ry - 45);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // === Walls ===
+  if(S.interiorWalls){
+    for(const w of S.interiorWalls){
+      // Shadow / thick outer stroke
+      ctx.strokeStyle = 'rgba(0,0,0,.4)';
+      ctx.lineWidth = 12;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+      // Main wall
+      ctx.strokeStyle = '#2c3f66';
+      ctx.lineWidth = 8;
+      ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+      // Highlight strip
+      ctx.strokeStyle = '#4a6aa0';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(w.x1, w.y1); ctx.lineTo(w.x2, w.y2); ctx.stroke();
+      // Rivets
+      ctx.fillStyle = '#e0e8f0';
+      const dx = w.x2-w.x1, dy = w.y2-w.y1;
+      const L = Math.hypot(dx,dy);
+      const steps = Math.max(3, Math.floor(L/25));
+      for(let i=1;i<steps;i++){
+        const t2 = i/steps;
+        const rx = w.x1 + dx*t2, ry = w.y1 + dy*t2;
+        ctx.beginPath(); ctx.arc(rx, ry, 1.5, 0, Math.PI*2); ctx.fill();
+      }
+    }
+    ctx.lineCap = 'butt';
+  }
+
+  // === Terminals ===
   for(const term of S.terminals){
-    const tx = Math.cos(term.ang) * term.dist;
-    const ty = Math.sin(term.ang) * term.dist;
+    const dist = term.dist !== undefined ? term.dist : (term.distR||0.55) * STATION.r;
+    const tx = Math.cos(term.ang) * dist;
+    const ty = Math.sin(term.ang) * dist;
     // Base panel
     ctx.save();
     ctx.translate(tx, ty);
