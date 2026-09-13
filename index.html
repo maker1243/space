@@ -1969,30 +1969,77 @@ const MODULES = {
 // Structure tier scaling — grows with station deck level
 function currentTier(){ return 1 + (S.deckCount||0) * 0.15; }
 
+// Room unlock progression order (airlock unlocks first so player can go outside!)
+const ROOM_UNLOCK_ORDER = ['airlock', 'reactor', 'medbay', 'weapons', 'storage', 'comms', 'engine', 'nav'];
+
+function unlockNextRoom(){
+  if(!S.unlockedRooms) S.unlockedRooms = new Set(['cafeteria']);
+  for(const room of ROOM_UNLOCK_ORDER){
+    if(!S.unlockedRooms.has(room)){
+      S.unlockedRooms.add(room);
+      const roomDef = (S.rooms||[]).find(r => r.type === room);
+      const name = roomDef ? roomDef.name : room;
+      flash('🔓 '+name+' 개방!');
+      return true;
+    }
+  }
+  return false;
+}
+
 // ===== Rectangular station interior — 9 rooms in 3x3 grid =====
 function makeInteriorWalls(){
   const w = STATION.w, h = STATION.h;
   const cW = w/3, cH = h/3;
   const doorHalf = 28; // door width / 2
   const walls = [];
-  // 2 vertical interior walls (at x = -w/6 and x = w/6)
-  for(const xw of [-w/6, w/6]){
+
+  // Room-cell type lookup
+  const cellType = {};
+  const _defs = [
+    {r:0,c:0,t:'medbay'},{r:0,c:1,t:'airlock'},{r:0,c:2,t:'weapons'},
+    {r:1,c:0,t:'storage'},{r:1,c:1,t:'cafeteria'},{r:1,c:2,t:'comms'},
+    {r:2,c:0,t:'engine'},{r:2,c:1,t:'nav'},{r:2,c:2,t:'reactor'},
+  ];
+  for(const d of _defs) cellType[d.r+','+d.c] = d.t;
+  const unlockedTemp = S.unlockedRooms || new Set(['cafeteria']);
+  const isOpen = (r,c) => unlockedTemp.has(cellType[r+','+c]);
+
+  // Vertical walls at x=±w/6 — door open only if BOTH adjacent cells unlocked
+  const vAtX = [-w/6, w/6];
+  for(let vi=0; vi<2; vi++){
+    const xw = vAtX[vi];
+    const leftC = vi===0 ? 0 : 1;
+    const rightC = vi===0 ? 1 : 2;
     for(let ri=0;ri<3;ri++){
       const yT = -h/2 + ri*cH;
       const yB = yT + cH;
       const midY = (yT+yB)/2;
-      walls.push({x1:xw, y1:yT, x2:xw, y2:midY-doorHalf});
-      walls.push({x1:xw, y1:midY+doorHalf, x2:xw, y2:yB});
+      const doorOpen = isOpen(ri, leftC) && isOpen(ri, rightC);
+      if(doorOpen){
+        walls.push({x1:xw, y1:yT, x2:xw, y2:midY-doorHalf});
+        walls.push({x1:xw, y1:midY+doorHalf, x2:xw, y2:yB});
+      } else {
+        walls.push({x1:xw, y1:yT, x2:xw, y2:yB, sealed:true});
+      }
     }
   }
-  // 2 horizontal interior walls (at y = -h/6 and y = h/6)
-  for(const yw of [-h/6, h/6]){
+  // Horizontal walls
+  const hAtY = [-h/6, h/6];
+  for(let hi=0; hi<2; hi++){
+    const yw = hAtY[hi];
+    const topR = hi===0 ? 0 : 1;
+    const botR = hi===0 ? 1 : 2;
     for(let ci=0;ci<3;ci++){
       const xL = -w/2 + ci*cW;
       const xR = xL + cW;
       const midX = (xL+xR)/2;
-      walls.push({x1:xL, y1:yw, x2:midX-doorHalf, y2:yw});
-      walls.push({x1:midX+doorHalf, y1:yw, x2:xR, y2:yw});
+      const doorOpen = isOpen(topR, ci) && isOpen(botR, ci);
+      if(doorOpen){
+        walls.push({x1:xL, y1:yw, x2:midX-doorHalf, y2:yw});
+        walls.push({x1:midX+doorHalf, y1:yw, x2:xR, y2:yw});
+      } else {
+        walls.push({x1:xL, y1:yw, x2:xR, y2:yw, sealed:true});
+      }
     }
   }
   S.interiorWalls = walls;
@@ -2016,7 +2063,10 @@ function makeInteriorWalls(){
     w: cW, h: cH,
   }));
 
-  // Position terminals in rooms that have them
+  // Initialize unlocked rooms if not set (start with just CAFETERIA)
+  if(!S.unlockedRooms) S.unlockedRooms = new Set(['cafeteria']);
+
+  // Position terminals only in UNLOCKED rooms
   const termMap = {
     reactor: {label:'🔥 리액터', color:'#ff9a3a', cdMax:30},
     medbay:  {label:'💊 의무실', color:'#ff8fd0', cdMax:45},
@@ -2027,7 +2077,7 @@ function makeInteriorWalls(){
   };
   S.terminals = [];
   for(const room of S.rooms){
-    if(termMap[room.type]){
+    if(termMap[room.type] && S.unlockedRooms.has(room.type)){
       const t = termMap[room.type];
       S.terminals.push({
         x: room.cx, y: room.cy + 10,
@@ -2170,10 +2220,12 @@ function buildModule(type){
     STATION.h += 40;
     S.hullMax += 25;
     S.hull += 25;
+    // Unlock next room
+    unlockNextRoom();
     repositionModules();
     makeInteriorWalls();
     upgradeAllStructures(1.15);
-    flash('🟦 격벽 확장 Lv.'+S.deckCount+' ('+STATION.w+'×'+STATION.h+')');
+    flash('🟦 격벽 확장 Lv.'+S.deckCount);
     trackStat('modulesBuilt', 1);
     trackStat('decksBuilt', 1);
     return;
@@ -2233,8 +2285,9 @@ function initGameHost(){
   // reset expansion — set w/h directly (r is a getter)
   STATION.w = STATION.baseW;
   STATION.h = STATION.baseH;
-  // Grinder (제련기) — bottom of rectangular hull
-  S.grinder = { x: 0, y: STATION.h/2, queue: [], processing: null, processT: 0, grindTime: 1.5, chuteR: 50 };
+  S.unlockedRooms = new Set(['cafeteria']);
+  // Grinder (제련기) — bottom of rectangular hull, much larger now
+  S.grinder = { x: 0, y: STATION.h/2 + 10, queue: [], processing: null, processT: 0, grindTime: 1.5, chuteR: 90, scale: 1.7 };
   S.particles=[]; S.bullets=[]; S.enemyBullets=[]; S.grenades=[];
   S.debris=[]; S.enemies=[]; S.wave=[]; S.waveTimer=0;
   S.breaches=[]; S.cam={x:0,y:0}; S.msg=''; S.msgT=0;
@@ -4053,7 +4106,7 @@ function drawStation(){
 }
 
 function drawInterior(){
-  if(!S.terminals || !S.terminals.length) return;
+  if(!S.rooms || !S.rooms.length) return;
   const me = myPlayer();
   const t = performance.now()*0.001;
 
@@ -4062,12 +4115,24 @@ function drawInterior(){
   ctx.beginPath();
   roundRect(ctx, -STATION.w/2+8, -STATION.h/2+8, STATION.w-16, STATION.h-16, 8);
   ctx.clip();
-  // Faint tile pattern per room
+  // Faint tile pattern per room (dark for locked)
   if(S.rooms){
     for(const room of S.rooms){
-      // Tint the room floor with its color
-      ctx.fillStyle = hexAlpha(room.color, 0.07);
+      const unlocked = S.unlockedRooms && S.unlockedRooms.has(room.type);
+      if(unlocked){
+        ctx.fillStyle = hexAlpha(room.color, 0.12);
+      } else {
+        ctx.fillStyle = 'rgba(20,30,50,.6)';
+      }
       ctx.fillRect(room.cx - room.w/2, room.cy - room.h/2, room.w, room.h);
+      // Locked border
+      if(!unlocked){
+        ctx.strokeStyle = 'rgba(120,140,180,.4)';
+        ctx.setLineDash([4,4]);
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(room.cx - room.w/2 + 4, room.cy - room.h/2 + 4, room.w-8, room.h-8);
+        ctx.setLineDash([]);
+      }
     }
   }
   // Grid lines
@@ -4082,15 +4147,24 @@ function drawInterior(){
   }
   ctx.restore();
 
-  // === Room labels ===
+  // === Room labels + lock icons ===
   if(S.rooms){
     ctx.textAlign='center'; ctx.textBaseline='middle';
     for(const room of S.rooms){
-      ctx.fillStyle = room.color;
-      ctx.globalAlpha = 0.35;
-      ctx.font = 'bold 12px "Segoe UI"';
-      ctx.fillText(room.name, room.cx, room.cy - room.h/2 + 14);
+      const unlocked = S.unlockedRooms && S.unlockedRooms.has(room.type);
+      ctx.fillStyle = unlocked ? room.color : '#a0b4d0';
+      ctx.globalAlpha = unlocked ? 0.7 : 0.85;
+      ctx.font = 'bold 13px "Segoe UI"';
+      ctx.fillText(room.name, room.cx, room.cy - room.h/2 + 16);
       ctx.globalAlpha = 1;
+      if(!unlocked){
+        ctx.font = '40px "Segoe UI Emoji"';
+        ctx.fillStyle = 'rgba(200,220,255,.7)';
+        ctx.fillText('🔒', room.cx, room.cy);
+        ctx.font = 'bold 10px "Segoe UI"';
+        ctx.fillStyle = 'rgba(200,220,255,.85)';
+        ctx.fillText('격벽 확장 필요', room.cx, room.cy + 30);
+      }
     }
   }
 
@@ -4227,9 +4301,10 @@ function drawAirlock(){
 
 function drawGrinder(){
   if(!S.grinder) return;
-  const ang = Math.PI/2;   // grinder always points down (out from bottom)
+  const ang = Math.PI/2;
   const gx = S.grinder.x, gy = S.grinder.y;
   const chuteR = S.grinder.chuteR;
+  const sc = S.grinder.scale || 1.7;
   const busy = !!S.grinder.processing;
   const t = performance.now()*0.001;
 
@@ -4243,6 +4318,7 @@ function drawGrinder(){
   ctx.save();
   ctx.translate(gx, gy);
   ctx.rotate(ang + Math.PI/2);
+  ctx.scale(sc, sc);
 
   // Chute housing (funnel shape)
   ctx.fillStyle = '#3a2a1a';
